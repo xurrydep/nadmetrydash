@@ -128,6 +128,9 @@ export async function POST(request: NextRequest) {
 
     // Create account from private key
     const account = privateKeyToAccount(privateKey as `0x${string}`);
+    
+    // Log the server wallet address for debugging
+    console.log('Server wallet address:', account.address);
 
     // Create wallet client
     const walletClient = createWalletClient({
@@ -146,6 +149,20 @@ export async function POST(request: NextRequest) {
         { error: 'Failed to connect to blockchain RPC. Please check your RPC configuration.' },
         500
       );
+    }
+    
+    // Check wallet balance and warn if it's low
+    try {
+      const balance = await publicClient.getBalance({ address: account.address });
+      const balanceInEther = Number(balance) / 10**18;
+      console.log(`Server wallet balance: ${balanceInEther} MON`);
+      
+      // Warn if balance is below 0.05 MON
+      if (balanceInEther < 0.05) {
+        console.warn(`Server wallet balance is low: ${balanceInEther} MON. Please add more funds.`);
+      }
+    } catch (balanceError) {
+      console.warn('Could not check wallet balance:', balanceError);
     }
 
     // Call the updatePlayerData function
@@ -173,9 +190,9 @@ export async function POST(request: NextRequest) {
     
     // Handle specific viem errors
     if (error instanceof Error) {
-      if (error.message.includes('insufficient funds')) {
+      if (error.message.includes('insufficient funds') || error.message.includes('insufficient balance')) {
         return createAuthenticatedResponse(
-          { error: 'Insufficient funds to complete transaction' },
+          { error: 'Server wallet has insufficient MON tokens for gas fees. Please fund the server wallet.' },
           400
         );
       }

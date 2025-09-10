@@ -16,7 +16,7 @@ Before running the application, you need to set up your environment variables:
 2. Fill in the required environment variables in `.env.local`:
    - `WALLET_PRIVATE_KEY`: Your wallet private key for server-side contract interactions
      - This wallet must have the GAME_ROLE on the contract to call updatePlayerData
-     - Make sure this wallet has enough MON tokens for gas fees
+     - **IMPORTANT**: Make sure this wallet has enough MON tokens for gas fees (at least 0.1 MON recommended)
    - `API_SECRET`: Generate using `openssl rand -hex 32`
    - `NEXT_PUBLIC_APP_URL`: Your application URL (e.g., http://localhost:3000)
    - `NEXT_PUBLIC_PRIVY_APP_ID`: Your Privy app ID for authentication
@@ -24,6 +24,14 @@ Before running the application, you need to set up your environment variables:
    - `NEXT_PUBLIC_RPC_URL`: The RPC URL for the Monad Testnet (defaults to Alchemy RPC)
 
 ⚠️ **Security Note**: Never commit `.env.local` or any file containing real secrets to version control. These files are already ignored by `.gitignore`.
+
+## Funding Your Wallet
+
+To submit scores to the blockchain, your server wallet (specified by WALLET_PRIVATE_KEY) must have MON tokens to pay for gas fees:
+
+1. Get your wallet address from a wallet management tool or by logging the address in the server code
+2. Visit the [Monad Testnet Faucet](https://faucet.monad.ai/) to get test MON tokens
+3. Send at least 0.1 MON tokens to your server wallet address
 
 ## Getting Started
 
