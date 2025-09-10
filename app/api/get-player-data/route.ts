@@ -32,8 +32,32 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Error getting player data:', error);
+    
+    // Handle specific errors
+    if (error instanceof Error) {
+      if (error.message.includes('Invalid chain')) {
+        return NextResponse.json(
+          { error: 'Invalid blockchain chain configuration.' },
+          { status: 500 }
+        );
+      }
+      if (error.message.includes('Invalid address')) {
+        return NextResponse.json(
+          { error: 'Invalid contract address. Please check contract configuration.' },
+          { status: 500 }
+        );
+      }
+      // Handle RPC connection errors
+      if (error.message.includes('fetch failed') || error.message.includes('ECONNREFUSED')) {
+        return NextResponse.json(
+          { error: 'Failed to connect to blockchain RPC. Please check your RPC configuration.' },
+          { status: 500 }
+        );
+      }
+    }
+    
     return NextResponse.json(
-      { error: 'Failed to get player data' },
+      { error: 'Failed to get player data: ' + (error instanceof Error ? error.message : 'Unknown error') },
       { status: 500 }
     );
   }
@@ -68,8 +92,32 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error getting player data:', error);
+    
+    // Handle specific errors
+    if (error instanceof Error) {
+      if (error.message.includes('Invalid chain')) {
+        return NextResponse.json(
+          { error: 'Invalid blockchain chain configuration.' },
+          { status: 500 }
+        );
+      }
+      if (error.message.includes('Invalid address')) {
+        return NextResponse.json(
+          { error: 'Invalid contract address. Please check contract configuration.' },
+          { status: 500 }
+        );
+      }
+      // Handle RPC connection errors
+      if (error.message.includes('fetch failed') || error.message.includes('ECONNREFUSED')) {
+        return NextResponse.json(
+          { error: 'Failed to connect to blockchain RPC. Please check your RPC configuration.' },
+          { status: 500 }
+        );
+      }
+    }
+    
     return NextResponse.json(
-      { error: 'Failed to get player data' },
+      { error: 'Failed to get player data: ' + (error instanceof Error ? error.message : 'Unknown error') },
       { status: 500 }
     );
   }

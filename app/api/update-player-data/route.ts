@@ -155,11 +155,21 @@ export async function POST(request: NextRequest) {
     try {
       const balance = await publicClient.getBalance({ address: account.address });
       const balanceInEther = Number(balance) / 10**18;
-      console.log(`Server wallet balance: ${balanceInEther} MON`);
+      console.log(`Server wallet (${account.address}) balance: ${balanceInEther} MON`);
       
+      // If balance is below 0.01 MON, reject the transaction
+      if (balanceInEther < 0.01) {
+        console.warn(`Server wallet balance is critically low: ${balanceInEther} MON. Transaction rejected.`);
+        return createAuthenticatedResponse(
+          { 
+            error: `Server wallet has insufficient MON tokens for gas fees. Current balance: ${balanceInEther.toFixed(6)} MON. Please fund the server wallet (address: ${account.address}) with at least 0.1 MON.` 
+          },
+          400
+        );
+      }
       // Warn if balance is below 0.05 MON
-      if (balanceInEther < 0.05) {
-        console.warn(`Server wallet balance is low: ${balanceInEther} MON. Please add more funds.`);
+      else if (balanceInEther < 0.05) {
+        console.warn(`Server wallet balance is low: ${balanceInEther} MON. Please add more funds soon.`);
       }
     } catch (balanceError) {
       console.warn('Could not check wallet balance:', balanceError);

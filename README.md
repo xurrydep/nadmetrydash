@@ -29,9 +29,21 @@ Before running the application, you need to set up your environment variables:
 
 To submit scores to the blockchain, your server wallet (specified by WALLET_PRIVATE_KEY) must have MON tokens to pay for gas fees:
 
-1. Get your wallet address from a wallet management tool or by logging the address in the server code
+1. Get your server wallet address:
+   - You can find it in the server console logs when submitting a score
+   - Or visit `/api/get-wallet-balance` endpoint in your browser
+   - Or check the error message when score submission fails (it includes the address)
+
 2. Visit the [Monad Testnet Faucet](https://faucet.monad.ai/) to get test MON tokens
 3. Send at least 0.1 MON tokens to your server wallet address
+
+## Checking Wallet Balance
+
+You can check your server wallet balance in several ways:
+
+1. Check the server console logs when submitting a score
+2. Visit the `/api/get-wallet-balance` endpoint in your browser
+3. Look at the detailed error message when score submission fails
 
 ## Getting Started
 

@@ -272,6 +272,26 @@ export async function getPlayerGameData(
   }
 }
 
+// Get server wallet balance
+export async function getServerWalletBalance(): Promise<{ balance: number; address: string } | null> {
+  try {
+    const response = await fetch('/api/get-wallet-balance');
+    const data = await response.json();
+    
+    if (data.success) {
+      return {
+        balance: data.balance,
+        address: data.address
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error getting server wallet balance:', error);
+    return null;
+  }
+}
+
 // Helper to batch score submissions (avoid spamming the blockchain)
 export class ScoreSubmissionManager {
   private playerAddress: string;
