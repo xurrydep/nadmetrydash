@@ -3,7 +3,7 @@ import { monadTestnet } from 'viem/chains';
 import { GAME_CONTRACT_ABI } from './contract-abi';
 
 // Contract configuration
-export const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || '0x3523cd0efcec61fcb76146099fed585bfcc5bee5') as `0x${string}`;
+export const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || '0x4b91a6541Cab9B2256EA7E6787c0aa6BE38b39c0') as `0x${string}`;
 
 // Export the ABI for use in other files
 export const CONTRACT_ABI = GAME_CONTRACT_ABI;
@@ -11,7 +11,7 @@ export const CONTRACT_ABI = GAME_CONTRACT_ABI;
 // Create public client for reading contract data
 export const publicClient = createPublicClient({
   chain: monadTestnet,
-  transport: http()
+  transport: http(process.env.NEXT_PUBLIC_RPC_URL || undefined)
 });
 
 // Helper function to validate Ethereum address

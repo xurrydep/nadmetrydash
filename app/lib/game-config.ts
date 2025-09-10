@@ -1,7 +1,7 @@
 // Game configuration
 export const GAME_CONFIG = {
   // Your registered game address
-  GAME_ADDRESS: '0x3523cd0efcec61fcb76146099fed585bfcc5bee5',
+  GAME_ADDRESS: '0x4b91a6541Cab9B2256EA7E6787c0aa6BE38b39c0',
   
   // Monad Games ID for leaderboard integration
   MONAD_GAMES_ID: 'cmd8euall0037le0my79qpz42',

@@ -176,6 +176,70 @@ export async function submitPlayerScore(
   }
 }
 
+// Submit multiple player scores and transaction data in a single batch to the contract
+export async function batchUpdatePlayerData(
+  playerAddress: string,
+  scoreTransactions: Array<{ scoreAmount: number; transactionAmount: number }>,
+  sessionToken?: string | null,
+  submitToLeaderboard: boolean = true
+): Promise<ScoreSubmissionResponse> {
+  try {
+    // Get session token if not provided
+    if (!sessionToken) {
+      sessionToken = await getSessionToken(playerAddress);
+      if (!sessionToken) {
+        return {
+          success: false,
+          error: 'Failed to authenticate. Please try again.',
+        };
+      }
+    }
+
+    // Combine all score and transaction amounts for batch submission
+    const totalScore = scoreTransactions.reduce((sum, item) => sum + item.scoreAmount, 0);
+    const totalTransactions = scoreTransactions.reduce((sum, item) => sum + item.transactionAmount, 0);
+
+    // Submit to blockchain contract
+    const response = await fetch('/api/update-player-data', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        playerAddress,
+        scoreAmount: totalScore,
+        transactionAmount: totalTransactions,
+        sessionToken,
+      }),
+    });
+
+    const data = await response.json();
+    
+    // If blockchain submission successful and leaderboard submission requested
+    if (data.success && submitToLeaderboard) {
+      try {
+        const leaderboardResult = await submitToMonadGamesLeaderboard(playerAddress, totalScore);
+        if (leaderboardResult.success) {
+          console.log('Score also submitted to Monad Games leaderboard');
+        } else {
+          console.warn('Failed to submit to leaderboard:', leaderboardResult.error);
+        }
+      } catch (leaderboardError) {
+        console.warn('Leaderboard submission failed:', leaderboardError);
+        // Don't fail the main submission if leaderboard fails
+      }
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error submitting batch score:', error);
+    return {
+      success: false,
+      error: 'Failed to submit batch score',
+    };
+  }
+}
+
 // Get player's total data across all games
 export async function getPlayerTotalData(playerAddress: string): Promise<PlayerDataResponse | null> {
   try {
