@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createWalletClient, http } from 'viem';
 import { monadTestnet } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
-import { CONTRACT_ADDRESS, CONTRACT_ABI, isValidAddress } from '@/app/lib/blockchain';
+import { CONTRACT_ADDRESS, CONTRACT_ABI, isValidAddress, publicClient } from '@/app/lib/blockchain';
 import { validateSessionToken, validateOrigin, createAuthenticatedResponse } from '@/app/lib/auth';
 import { rateLimit } from '@/app/lib/rate-limiter';
 import { generateRequestId, isDuplicateRequest, markRequestProcessing, markRequestComplete } from '@/app/lib/request-deduplication';
@@ -102,9 +102,27 @@ export async function POST(request: NextRequest) {
     const privateKey = process.env.WALLET_PRIVATE_KEY;
     if (!privateKey) {
       console.error('WALLET_PRIVATE_KEY environment variable not set');
-      return NextResponse.json(
-        { error: 'Server configuration error' },
-        { status: 500 }
+      return createAuthenticatedResponse(
+        { error: 'Server configuration error: WALLET_PRIVATE_KEY not set' },
+        500
+      );
+    }
+
+    // Validate private key format
+    if (!privateKey.startsWith('0x') || privateKey.length !== 66) {
+      console.error('Invalid WALLET_PRIVATE_KEY format');
+      return createAuthenticatedResponse(
+        { error: 'Server configuration error: Invalid WALLET_PRIVATE_KEY format' },
+        500
+      );
+    }
+
+    // Check if API_SECRET is set
+    if (!process.env.API_SECRET) {
+      console.error('API_SECRET environment variable not set');
+      return createAuthenticatedResponse(
+        { error: 'Server configuration error: API_SECRET not set' },
+        500
       );
     }
 
@@ -117,6 +135,18 @@ export async function POST(request: NextRequest) {
       chain: monadTestnet,
       transport: http(process.env.NEXT_PUBLIC_RPC_URL || undefined)
     });
+
+    // Validate RPC connection by getting block number
+    try {
+      const blockNumber = await publicClient.getBlockNumber();
+      console.log('RPC connection successful. Current block number:', blockNumber);
+    } catch (rpcError) {
+      console.error('RPC connection failed:', rpcError);
+      return createAuthenticatedResponse(
+        { error: 'Failed to connect to blockchain RPC. Please check your RPC configuration.' },
+        500
+      );
+    }
 
     // Call the updatePlayerData function
     const hash = await walletClient.writeContract({
@@ -161,10 +191,31 @@ export async function POST(request: NextRequest) {
           403
         );
       }
+      // Handle RPC connection errors
+      if (error.message.includes('fetch failed') || error.message.includes('ECONNREFUSED')) {
+        return createAuthenticatedResponse(
+          { error: 'Failed to connect to blockchain RPC. Please check your RPC configuration.' },
+          500
+        );
+      }
+      // Handle invalid chain errors
+      if (error.message.includes('Invalid chain')) {
+        return createAuthenticatedResponse(
+          { error: 'Invalid blockchain chain configuration.' },
+          500
+        );
+      }
+      // Handle contract address errors
+      if (error.message.includes('Invalid address')) {
+        return createAuthenticatedResponse(
+          { error: 'Invalid contract address. Please check contract configuration.' },
+          500
+        );
+      }
     }
 
     return createAuthenticatedResponse(
-      { error: 'Failed to update player data' },
+      { error: 'Failed to update player data: ' + (error instanceof Error ? error.message : 'Unknown error') },
       500
     );
   }

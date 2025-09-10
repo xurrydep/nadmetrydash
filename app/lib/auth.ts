@@ -5,7 +5,7 @@ import crypto from 'crypto';
 function getServerApiSecret(): string {
   const secret = process.env.API_SECRET;
   if (!secret) {
-    throw new Error('API_SECRET environment variable is required');
+    throw new Error('API_SECRET environment variable is required. Please set it in your .env.local file.');
   }
   return secret;
 }
@@ -58,7 +58,12 @@ export function validateOrigin(request: NextRequest): boolean {
     'https://localhost:3000',
     'https://nadmetrydash.vercel.app',
     process.env.NEXT_PUBLIC_APP_URL
-  ].filter(Boolean);
+  ].filter(Boolean) as string[];
+
+  // Allow requests with no origin (like curl requests) in development
+  if (!origin && process.env.NODE_ENV === 'development') {
+    return true;
+  }
 
   // Stricter origin validation
   if (!origin || !allowedOrigins.includes(origin)) {
@@ -68,8 +73,8 @@ export function validateOrigin(request: NextRequest): boolean {
     }
   }
 
-  // Additional check: reject requests that look like automated tools
-  if (!userAgent || userAgent.includes('curl') || userAgent.includes('wget') || userAgent.includes('Postman')) {
+  // Additional check: reject requests that look like automated tools (but allow in development)
+  if (process.env.NODE_ENV !== 'development' && (!userAgent || userAgent.includes('curl') || userAgent.includes('wget') || userAgent.includes('Postman'))) {
     return false;
   }
 

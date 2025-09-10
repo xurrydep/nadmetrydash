@@ -21,9 +21,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify that the message contains the player address and a recent timestamp
-    // This should be done by checking the signature against the player's wallet
-    // For now, we'll implement a basic check - in production, you'd verify the signature
-    const expectedMessage = `Authenticate for score submission: ${playerAddress}`;
     if (!message.includes(playerAddress)) {
       return NextResponse.json(
         { error: 'Invalid message format' },
@@ -31,17 +28,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // TODO: Add proper signature verification here using viem/ethers
-    // For now, we'll trust that the frontend provides the correct signature
-    
-    // Generate session token
-    const timestamp = Math.floor(Date.now() / 30000) * 30000; // Round to 30-second intervals
-    const sessionToken = generateSessionToken(playerAddress, timestamp);
+    // Check if this is a server-generated token request (for development/testing)
+    // In production, you should verify the signature using viem/ethers
+    let sessionToken: string;
+    if (signedMessage === "server_generated_token") {
+      // Generate session token for development/testing
+      const timestamp = Math.floor(Date.now() / 30000) * 30000; // Round to 30-second intervals
+      sessionToken = generateSessionToken(playerAddress, timestamp);
+    } else {
+      // TODO: Add proper signature verification here using viem/ethers
+      // For now, we'll trust that the frontend provides the correct signature
+      const timestamp = Math.floor(Date.now() / 30000) * 30000; // Round to 30-second intervals
+      sessionToken = generateSessionToken(playerAddress, timestamp);
+    }
 
     return NextResponse.json({
       success: true,
       sessionToken,
-      expiresAt: timestamp + 300000, // 5 minutes from token timestamp
+      expiresAt: Date.now() + 300000, // 5 minutes from now
     });
 
   } catch (error) {

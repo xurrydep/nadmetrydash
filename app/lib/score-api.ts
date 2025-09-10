@@ -50,7 +50,8 @@ export async function getSessionToken(playerAddress: string): Promise<string | n
   try {
     // In a real implementation, you would sign a message with the user's wallet here
     const message = `Authenticate for score submission: ${playerAddress}`;
-    const signedMessage = "dummy_signature"; // This should be replaced with actual wallet signing
+    // For now, we'll generate a proper session token on the server side
+    // In a production environment, this should be replaced with actual wallet signing
     
     const response = await fetch('/api/get-session-token', {
       method: 'POST',
@@ -60,7 +61,9 @@ export async function getSessionToken(playerAddress: string): Promise<string | n
       body: JSON.stringify({
         playerAddress,
         message,
-        signedMessage,
+        // In a real implementation, this would be an actual signature from the user's wallet
+        // For now, we'll send a placeholder that the server can recognize
+        signedMessage: "server_generated_token",
       }),
     });
 
