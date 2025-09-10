@@ -17,6 +17,7 @@ Before running the application, you need to set up your environment variables:
    - `WALLET_PRIVATE_KEY`: Your wallet private key for server-side contract interactions
      - This wallet must have the GAME_ROLE on the contract to call updatePlayerData
      - **IMPORTANT**: Make sure this wallet has enough MON tokens for gas fees (at least 0.1 MON recommended)
+     - **NOTE**: This is a SEPARATE wallet from your personal/player wallet used to play the game
    - `API_SECRET`: Generate using `openssl rand -hex 32`
    - `NEXT_PUBLIC_APP_URL`: Your application URL (e.g., http://localhost:3000)
    - `NEXT_PUBLIC_PRIVY_APP_ID`: Your Privy app ID for authentication
@@ -27,12 +28,21 @@ Before running the application, you need to set up your environment variables:
 
 ## Funding Your Wallet
 
-To submit scores to the blockchain, your server wallet (specified by WALLET_PRIVATE_KEY) must have MON tokens to pay for gas fees:
+To submit scores to the blockchain, your **server wallet** (specified by WALLET_PRIVATE_KEY) must have MON tokens to pay for gas fees:
+
+### Important: Server Wallet vs. Player Wallet
+There are TWO different wallets involved:
+1. **Player Wallet** - Your personal wallet used to play the game (the one with 5 MON)
+2. **Server Wallet** - The wallet controlled by the application server (this needs funding)
+
+When you save scores, the SERVER wallet pays the gas fees, not your player wallet.
+
+### How to Fund Your Server Wallet
 
 1. Get your server wallet address:
-   - You can find it in the server console logs when submitting a score
-   - Or visit `/api/get-wallet-balance` endpoint in your browser
-   - Or check the error message when score submission fails (it includes the address)
+   - Visit `http://localhost:3000/api/get-wallet-balance` in your browser
+   - Or check the server console logs when submitting a score
+   - Or look at the detailed error message when score submission fails (it includes the address)
 
 2. Visit the [Monad Testnet Faucet](https://faucet.monad.ai/) to get test MON tokens
 3. Send at least 0.1 MON tokens to your server wallet address

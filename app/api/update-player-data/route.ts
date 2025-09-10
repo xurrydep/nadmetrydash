@@ -9,8 +9,11 @@ import { generateRequestId, isDuplicateRequest, markRequestProcessing, markReque
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('Update player data request received');
+    
     // Security checks - Origin validation first
     if (!validateOrigin(request)) {
+      console.log('Origin validation failed');
       return createAuthenticatedResponse({ error: 'Forbidden: Invalid origin' }, 403);
     }
 
@@ -19,6 +22,7 @@ export async function POST(request: NextRequest) {
     const rateLimitResult = rateLimit(clientIp, { maxRequests: 10, windowMs: 60000 }); // 10 requests per minute
     
     if (!rateLimitResult.allowed) {
+      console.log(`Rate limit exceeded for IP: ${clientIp}`);
       return createAuthenticatedResponse({
         error: 'Too many requests',
         resetTime: rateLimitResult.resetTime
@@ -27,14 +31,17 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const { playerAddress, scoreAmount, transactionAmount, sessionToken } = await request.json();
+    console.log(`Processing request for player ${playerAddress} with score ${scoreAmount} and transactions ${transactionAmount}`);
 
     // Session token authentication - verify the user controls the wallet
     if (!sessionToken || !validateSessionToken(sessionToken, playerAddress)) {
+      console.log('Session token validation failed');
       return createAuthenticatedResponse({ error: 'Unauthorized: Invalid or expired session token' }, 401);
     }
 
     // Validate input
     if (!playerAddress || scoreAmount === undefined || transactionAmount === undefined) {
+      console.log('Missing required fields');
       return createAuthenticatedResponse(
         { error: 'Missing required fields: playerAddress, scoreAmount, transactionAmount' },
         400
@@ -43,6 +50,7 @@ export async function POST(request: NextRequest) {
 
     // Validate player address format
     if (!isValidAddress(playerAddress)) {
+      console.log('Invalid player address format');
       return createAuthenticatedResponse(
         { error: 'Invalid player address format' },
         400
@@ -51,6 +59,7 @@ export async function POST(request: NextRequest) {
 
     // Validate that scoreAmount and transactionAmount are positive numbers
     if (scoreAmount < 0 || transactionAmount < 0) {
+      console.log('Negative score or transaction amounts');
       return createAuthenticatedResponse(
         { error: 'Score and transaction amounts must be non-negative' },
         400
@@ -66,6 +75,7 @@ export async function POST(request: NextRequest) {
     const MAX_SCORE_PER_TRANSACTION = 10000; // Max 10000 points per transaction
 
     if (scoreAmount > MAX_SCORE_PER_REQUEST || transactionAmount > MAX_TRANSACTIONS_PER_REQUEST) {
+      console.log('Score or transaction amounts too large');
       return createAuthenticatedResponse(
         { error: `Amounts too large. Max score: ${MAX_SCORE_PER_REQUEST}, Max transactions: ${MAX_TRANSACTIONS_PER_REQUEST}` },
         400
@@ -73,6 +83,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (scoreAmount < MIN_SCORE_PER_REQUEST && scoreAmount !== 0) {
+      console.log('Score amount too small');
       return createAuthenticatedResponse(
         { error: `Score amount too small. Minimum: ${MIN_SCORE_PER_REQUEST}` },
         400
@@ -81,6 +92,7 @@ export async function POST(request: NextRequest) {
 
     // Validate score-to-transaction ratio to prevent unrealistic scores
     if (transactionAmount > 0 && (scoreAmount / transactionAmount) > MAX_SCORE_PER_TRANSACTION) {
+      console.log('Score per transaction ratio too high');
       return createAuthenticatedResponse(
         { error: `Score per transaction too high. Maximum: ${MAX_SCORE_PER_TRANSACTION} points per transaction` },
         400
@@ -90,6 +102,7 @@ export async function POST(request: NextRequest) {
     // Request deduplication
     const requestId = generateRequestId(playerAddress, scoreAmount, transactionAmount);
     if (isDuplicateRequest(requestId)) {
+      console.log(`Duplicate request detected: ${requestId}`);
       return createAuthenticatedResponse(
         { error: 'Duplicate request detected. Please wait before retrying.' },
         409
@@ -162,7 +175,7 @@ export async function POST(request: NextRequest) {
         console.warn(`Server wallet balance is critically low: ${balanceInEther} MON. Transaction rejected.`);
         return createAuthenticatedResponse(
           { 
-            error: `Server wallet has insufficient MON tokens for gas fees. Current balance: ${balanceInEther.toFixed(6)} MON. Please fund the server wallet (address: ${account.address}) with at least 0.1 MON.` 
+            error: `SERVER WALLET ISSUE: The server wallet (controlled by the application) has insufficient MON tokens for gas fees. Current balance: ${balanceInEther.toFixed(6)} MON. Please fund the server wallet (address: ${account.address}) with at least 0.1 MON. This is DIFFERENT from your personal wallet. Visit https://faucet.monad.ai/ to get test tokens.` 
           },
           400
         );
@@ -176,6 +189,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Call the updatePlayerData function
+    console.log(`Calling updatePlayerData for player ${playerAddress} with score ${scoreAmount} and transactions ${transactionAmount}`);
     const hash = await walletClient.writeContract({
       address: CONTRACT_ADDRESS,
       abi: CONTRACT_ABI,
@@ -186,6 +200,7 @@ export async function POST(request: NextRequest) {
         BigInt(transactionAmount)
       ]
     });
+    console.log(`Transaction successful with hash: ${hash}`);
 
     markRequestComplete(requestId);
 
