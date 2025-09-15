@@ -11,6 +11,17 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
+  // Log the app ID for debugging (remove in production)
+  console.log('Privy App ID:', privyAppId);
+  console.log('Privy App ID length:', privyAppId.length);
+
+  // Check if the app ID has the correct format (should start with "cm" and be of reasonable length)
+  if (!privyAppId.startsWith('cm') || privyAppId.length < 10) {
+    console.error('Invalid Privy App ID format. It should start with "cm" and be longer. Current value:', privyAppId);
+    console.warn('Privy authentication will not be available due to invalid app ID.');
+    return <>{children}</>;
+  }
+
   return (
     <PrivyProvider
       appId={privyAppId}
