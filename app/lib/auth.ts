@@ -65,11 +65,21 @@ export function validateOrigin(request: NextRequest): boolean {
     return true;
   }
 
-  // Stricter origin validation
-  if (!origin || !allowedOrigins.includes(origin)) {
-    // Also check referer as fallback, but be more strict
-    if (!referer || !allowedOrigins.some(allowed => referer.startsWith(allowed + '/'))) {
-      return false;
+  // More flexible origin validation - check if origin matches any allowed origin pattern
+  if (origin) {
+    for (const allowedOrigin of allowedOrigins) {
+      if (origin === allowedOrigin || origin.startsWith(allowedOrigin)) {
+        return true;
+      }
+    }
+  }
+
+  // Also check referer as fallback
+  if (referer) {
+    for (const allowedOrigin of allowedOrigins) {
+      if (referer.startsWith(allowedOrigin)) {
+        return true;
+      }
     }
   }
 
@@ -78,7 +88,7 @@ export function validateOrigin(request: NextRequest): boolean {
     return false;
   }
 
-  return true;
+  return false;
 }
 
 // CSRF token generation and validation
