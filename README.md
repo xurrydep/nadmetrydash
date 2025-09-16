@@ -37,6 +37,10 @@ There are TWO different wallets involved:
 
 When you save scores, the SERVER wallet pays the gas fees, not your player wallet.
 
+### Quick Fix
+
+If players are experiencing issues saving scores, follow the detailed [Server Wallet Setup Guide](SERVER_WALLET_SETUP.md).
+
 ### How to Fund Your Server Wallet
 
 1. Get your server wallet address:

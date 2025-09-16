@@ -172,9 +172,16 @@ export async function submitPlayerScore(
     return data;
   } catch (error) {
     console.error('Error submitting score:', error);
+    // Check if this is a network error that might indicate server wallet issues
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      return {
+        success: false,
+        error: 'Sunucuya bağlanılamadı. Sunucu cüzdanı MON token yetersiz olabilir. Lütfen oyun geliştiricisine bildirin.',
+      };
+    }
     return {
       success: false,
-      error: 'Failed to submit score',
+      error: 'Failed to submit score: ' + (error instanceof Error ? error.message : 'Unknown error'),
     };
   }
 }

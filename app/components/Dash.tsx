@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { submitPlayerScore, getPlayerTotalData } from '../lib/score-api';
 import { GAME_CONFIG } from '../lib/game-config';
+import { checkServerWalletBalance, hasSufficientFunds, formatBalance } from '../lib/wallet-utils';
 
 interface Player {
   x: number;
@@ -2216,17 +2217,34 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     setSaveMessage('');
 
     try {
+      // Check server wallet balance before attempting to save
+      const walletCheck = await checkServerWalletBalance();
+      if (walletCheck.success && walletCheck.balance !== undefined) {
+        if (!hasSufficientFunds(walletCheck.balance)) {
+          setSaveMessage(`❌ Sunucu cüzdanı MON token yetersiz! Mevcut bakiye: ${formatBalance(walletCheck.balance)} MON. Lütfen oyun geliştiricisine bildirin.`);
+          setIsSavingScore(false);
+          return;
+        }
+      }
+
       const result = await submitPlayerScore(playerAddress, score, 1);
       
       if (result.success) {
         setSaveMessage(`✅ Skor kaydedildi! TX: ${result.transactionHash?.slice(0, 8)}...`);
         console.log(`Transaction confirmed: https://testnet.monadscan.com/tx/${result.transactionHash}`);
       } else {
-        setSaveMessage(`❌ Hata: ${result.error || 'Bilinmeyen hata'}`);
+        // Check if this is a server wallet funding issue
+        if (result.error?.includes('SERVER WALLET ISSUE') || result.error?.includes('insufficient MON tokens')) {
+          setSaveMessage(`❌ Sunucu cüzdanı MON token yetersiz! Lütfen oyun geliştiricisine bildirin. Hata: ${result.error}`);
+        } else if (result.error?.includes('Unauthorized') || result.error?.includes('GAME_ROLE')) {
+          setSaveMessage(`❌ Sunucu cüzdanı oyun rolüne sahip değil! Lütfen oyun geliştiricisine bildirin. Hata: ${result.error}`);
+        } else {
+          setSaveMessage(`❌ Hata: ${result.error || 'Bilinmeyen hata'}`);
+        }
       }
     } catch (error) {
       console.error('Score save error:', error);
-      setSaveMessage('❌ Skor kaydedilemedi!');
+      setSaveMessage('❌ Skor kaydedilemedi! Ağ hatası oluştu.');
     } finally {
       setIsSavingScore(false);
       setTimeout(() => setSaveMessage(''), 5000);
