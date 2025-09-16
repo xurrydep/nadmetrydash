@@ -93,7 +93,7 @@ export async function submitToMonadGamesLeaderboard(
     }
 
     // Monad Games API endpoint (this would be the actual Monad Games API)
-    const response = await fetch('https://api.monadgames.com/leaderboard/submit', {
+    const response = await fetch('https://www.monadclip.fun/api/get-wallet-balance', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
