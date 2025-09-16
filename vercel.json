@@ -12,8 +12,5 @@
       "src": "/(.*)",
       "dest": "/"
     }
-  ],
-  "env": {
-    "NEXT_PUBLIC_APP_URL": "https://nadmetrydash-7apt4g328-xurrys-projects.vercel.app"
-  }
+  ]
 }
