@@ -193,6 +193,10 @@ export async function updateGameState(gameState: GameStateUpdate): Promise<boole
   }
 
   try {
+    // Add a timeout to prevent hanging
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    
     const response = await fetch('/api/update-game-state', {
       method: 'POST',
       headers: {
@@ -202,8 +206,11 @@ export async function updateGameState(gameState: GameStateUpdate): Promise<boole
         sessionId: currentSessionId,
         gameState,
       }),
+      signal: controller.signal
     });
-
+    
+    clearTimeout(timeoutId);
+    
     const data = await response.json();
     return data.success;
   } catch (error) {
