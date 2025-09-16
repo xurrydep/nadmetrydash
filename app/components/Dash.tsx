@@ -2219,7 +2219,7 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
       const result = await submitPlayerScore(playerAddress, score, 1);
       
       if (result.success) {
-        setSaveMessage(`✅ Skor kaydedildi! TX: ${result.transactionHash?.slice(0, 8)}...`);
+        setSaveMessage(`✅ Save Score! TX: ${result.transactionHash?.slice(0, 8)}...`);
         console.log(`Transaction confirmed: https://testnet.monadscan.com/tx/${result.transactionHash}`);
       } else {
         setSaveMessage(`❌ Hata: ${result.error || 'Bilinmeyen hata'}`);
