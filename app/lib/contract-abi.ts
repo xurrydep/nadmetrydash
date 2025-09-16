@@ -254,3 +254,10 @@ export const GAME_CONTRACT_ABI = [
     type: "function",
   },
 ] as const;
+
+// Additional ABI definition using parseAbi
+import { parseAbi } from 'viem';
+
+const abi = parseAbi([
+  "function updatePlayerData((address player,uint256 score,uint256 transactions) _playerData)"
+]);
