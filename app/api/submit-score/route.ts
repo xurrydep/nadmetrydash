@@ -4,6 +4,26 @@ import { validateOrigin } from '@/app/lib/auth';
 import { submitPlayerScore } from '@/app/lib/score-api';
 
 export async function POST(request: NextRequest) {
+  // Add a timeout to prevent hanging
+  const timeoutPromise = new Promise<Response>((_, reject) => 
+    setTimeout(() => reject(new Error('Request timeout')), 10000) // 10 second timeout for blockchain operations
+  );
+  
+  const apiPromise = handleRequest(request);
+  
+  try {
+    const result = await Promise.race([apiPromise, timeoutPromise]);
+    return result;
+  } catch (error) {
+    console.error('Error submitting score (timeout or other error):', error);
+    return NextResponse.json(
+      { error: 'Failed to submit score (timeout)' },
+      { status: 500 }
+    );
+  }
+}
+
+async function handleRequest(request: NextRequest) {
   try {
     // Validate origin
     if (!validateOrigin(request)) {

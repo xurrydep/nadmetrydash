@@ -533,21 +533,24 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     // Update game state in session periodically (every 100 distance units)
     // Only try to update if we have a session
     if (sessionId && Math.floor(gameState.distance) % 100 === 0) {
-      updateSessionGameState({
-        score: gameState.score,
-        distance: gameState.distance,
-        player: {
-          x: gameState.player.x,
-          y: gameState.player.y,
-          mode: gameState.player.mode,
-          rocketFuel: gameState.player.rocketFuel
-        },
-        currentTheme: gameState.currentTheme,
-        rocketModeActive: gameState.rocketModeActive
-      }).catch(error => {
-        console.error('Failed to update session game state:', error);
-        // Don't let session update failures freeze the game
-      });
+      // Make session update truly asynchronous and non-blocking
+      setTimeout(() => {
+        updateSessionGameState({
+          score: gameState.score,
+          distance: gameState.distance,
+          player: {
+            x: gameState.player.x,
+            y: gameState.player.y,
+            mode: gameState.player.mode,
+            rocketFuel: gameState.player.rocketFuel
+          },
+          currentTheme: gameState.currentTheme,
+          rocketModeActive: gameState.rocketModeActive
+        }).catch(error => {
+          console.error('Failed to update session game state:', error);
+          // Don't let session update failures freeze the game
+        });
+      }, 0);
     }
     
     // Player physics
@@ -928,9 +931,15 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     // Increase game speed gradually
     gameState.gameSpeed = Math.min(GAME_SPEED + Math.floor(gameState.camera.x / 1000) * 0.5, GAME_SPEED * 2);
 
-    // Continue game loop
+    // Continue game loop - ensure it always continues even if there are session issues
     if (gameState.isRunning) {
-      gameLoopRef.current = requestAnimationFrame(gameLoop);
+      try {
+        gameLoopRef.current = requestAnimationFrame(gameLoop);
+      } catch (error) {
+        console.error('Error in game loop:', error);
+        // Even if there's an error, try to continue the game loop
+        gameLoopRef.current = requestAnimationFrame(gameLoop);
+      }
     }
   }, [score]); // eslint-disable-line react-hooks/exhaustive-deps
 

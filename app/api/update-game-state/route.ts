@@ -3,6 +3,27 @@ import { updateGameState, getSession } from '@/app/lib/sessions';
 import { validateOrigin } from '@/app/lib/auth';
 
 export async function POST(request: NextRequest) {
+  // Add a timeout to prevent hanging
+  const timeoutPromise = new Promise<Response>((_, reject) => 
+    setTimeout(() => reject(new Error('Request timeout')), 5000)
+  );
+  
+  const apiPromise = handleRequest(request);
+  
+  try {
+    const result = await Promise.race([apiPromise, timeoutPromise]);
+    return result;
+  } catch (error) {
+    console.error('Error updating game state (timeout or other error):', error);
+    // Even if there's an error or timeout, we return success to keep the game running
+    return NextResponse.json({
+      success: true,
+      message: 'Game state update processed with warnings'
+    }, { status: 200 });
+  }
+}
+
+async function handleRequest(request: NextRequest) {
   try {
     // Validate origin
     if (!validateOrigin(request)) {
