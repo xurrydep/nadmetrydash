@@ -66,8 +66,7 @@ export async function getPlayerDataPerGame(playerAddress: string, gameAddress: s
     });
 
     return {
-      score: result[0],
-      transactions: result[1]
+      score: result
     };
   } catch (error) {
     console.error('Error reading player data per game:', error);

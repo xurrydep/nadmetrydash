@@ -28,8 +28,7 @@ export async function GET(request: NextRequest) {
       success: true,
       playerAddress,
       gameAddress,
-      score: playerData.score.toString(),
-      transactions: playerData.transactions.toString()
+      score: playerData.score.toString()
     });
 
   } catch (error) {
@@ -65,8 +64,7 @@ export async function POST(request: NextRequest) {
       success: true,
       playerAddress,
       gameAddress,
-      score: playerData.score.toString(),
-      transactions: playerData.transactions.toString()
+      score: playerData.score.toString()
     });
 
   } catch (error) {
