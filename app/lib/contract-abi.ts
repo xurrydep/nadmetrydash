@@ -36,7 +36,6 @@ export const GAME_CONTRACT_ABI = [
     "inputs": [
       { "indexed": true, "internalType": "address", "name": "game", "type": "address" },
       { "indexed": true, "internalType": "address", "name": "player", "type": "address" },
-      { "indexed": true, "internalType": "uint256", "name": "scoreAmount", "type": "uint256" },
       { "indexed": false, "internalType": "uint256", "name": "transactionAmount", "type": "uint256" }
     ],
     "name": "PlayerDataUpdated",
@@ -90,13 +89,11 @@ export const GAME_CONTRACT_ABI = [
     "inputs": [
       {
         "components": [
-          { "internalType": "address", "name": "player", "type": "address" },
-          { "internalType": "uint256", "name": "score", "type": "uint256" },
-          { "internalType": "uint256", "name": "transactions", "type": "uint256" }
+        { "internalType": "uint256", "name": "score", "type": "uint256" },
         ],
-        "internalType": "struct Leaderboard.PlayerData[]",
-        "name": "_playerDatas",
-        "type": "tuple[]"
+        "internalType": "struct Leaderboard.PlayerData",
+        "name": "_playerData",
+        "type": "tuple"
       }
     ],
     "name": "batchUpdatePlayerData",

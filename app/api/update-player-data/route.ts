@@ -194,11 +194,11 @@ export async function POST(request: NextRequest) {
       address: CONTRACT_ADDRESS,
       abi: CONTRACT_ABI,
       functionName: 'updatePlayerData',
-      args: [
-        playerAddress as `0x${string}`,
-        BigInt(scoreAmount),
-        BigInt(transactionAmount)
-      ]
+      args: [{
+        player: playerAddress as `0x${string}`,
+        score: BigInt(scoreAmount),
+        transactions: BigInt(transactionAmount)
+      }]
     });
     console.log(`Transaction successful with hash: ${hash}`);
 
