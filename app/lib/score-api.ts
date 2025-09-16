@@ -37,6 +37,26 @@ interface PlayerDataPerGameResponse {
   error?: string;
 }
 
+interface GameStateData {
+  score: number;
+  distance: number;
+  player: {
+    x: number;
+    y: number;
+    mode: string;
+    rocketFuel: number;
+  };
+  currentTheme: string;
+  rocketModeActive: boolean;
+}
+
+interface AdditionalScoreData {
+  distance?: number;
+  theme?: string;
+  mode?: string;
+  playerAddress?: string;
+}
+
 // Get session token for authenticated requests
 export async function getSessionToken(playerAddress: string): Promise<string | null> {
   try {
@@ -138,6 +158,53 @@ export async function getPlayerGameData(
   } catch (error) {
     console.error('Error getting player game data:', error);
     return null;
+  }
+}
+
+// Create a new game session
+export async function createSession(_playerAddress: string, _encodedKeys: string): Promise<string | null> {
+  try {
+    // In a real implementation, you would validate the encoded keys here
+    // For now, we'll just return a mock session ID
+    return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  } catch (error) {
+    console.error('Error creating session:', error);
+    return null;
+  }
+}
+
+// Update game state in session
+export async function updateGameState(gameState: GameStateData): Promise<boolean> {
+  try {
+    // In a real implementation, you would send the game state to the server
+    // For now, we'll just log it and return success
+    console.log('Game state updated:', gameState);
+    return true;
+  } catch (error) {
+    console.error('Error updating game state:', error);
+    return false;
+  }
+}
+
+// Submit score with hash verification
+export async function submitScoreWithHash(
+  score: number,
+  additionalData: AdditionalScoreData
+): Promise<ScoreSubmissionResponse> {
+  try {
+    // In a real implementation, you would generate a hash of the score and additional data
+    // and send it to the server for verification
+    // For now, we'll just call the existing submitPlayerScore function
+    const playerAddress = additionalData.playerAddress || '0x0000000000000000000000000000000000000000';
+    
+    // Submit the score using the existing function
+    return submitPlayerScore(playerAddress, score, 1);
+  } catch (error) {
+    console.error('Error submitting score with hash:', error);
+    return {
+      success: false,
+      error: 'Failed to submit score with hash verification'
+    };
   }
 }
 

@@ -1,9 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { createSession, updateGameState as updateSessionGameState, submitPlayerScore, getPlayerTotalData, submitScoreWithHash } from '../lib/score-api';
+import { submitPlayerScore, getPlayerTotalData } from '../lib/score-api';
 import { GAME_CONFIG } from '../lib/game-config';
-
-
 
 interface Player {
   x: number;
@@ -454,8 +452,6 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
   const [distance, setDistance] = useState(0);
   const [isSavingScore, setIsSavingScore] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string>('');
-  // Add session state
-  const [sessionId, setSessionId] = useState<string | null>(null);
 
   const gameStateRef = useRef({
     player: {
@@ -529,27 +525,6 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     
     // Check for new movement abilities
     checkNewMovementAbilities(gameState, score);
-    
-    // Update game state in session periodically (every 100 distance units)
-    // Only try to update if we have a session
-    if (sessionId && Math.floor(gameState.distance) % 100 === 0) {
-      // Make session update truly asynchronous and non-blocking
-      setTimeout(() => {
-        updateSessionGameState({
-          score: gameState.score,
-          distance: gameState.distance,
-          player: {
-            x: gameState.player.x,
-            y: gameState.player.y,
-            mode: gameState.player.mode,
-            rocketFuel: gameState.player.rocketFuel
-          },
-          currentTheme: gameState.currentTheme,
-          rocketModeActive: gameState.rocketModeActive
-        }).catch(error => {          
-        });
-      }, 0);
-    }
     
     // Player physics
     const player = gameState.player;
@@ -929,15 +904,9 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     // Increase game speed gradually
     gameState.gameSpeed = Math.min(GAME_SPEED + Math.floor(gameState.camera.x / 1000) * 0.5, GAME_SPEED * 2);
 
-    // Continue game loop - ensure it always continues even if there are session issues
+    // Continue game loop
     if (gameState.isRunning) {
-      try {
-        gameLoopRef.current = requestAnimationFrame(gameLoop);
-      } catch (error) {
-        console.error('Error in game loop:', error);
-        // Even if there's an error, try to continue the game loop
-        gameLoopRef.current = requestAnimationFrame(gameLoop);
-      }
+      gameLoopRef.current = requestAnimationFrame(gameLoop);
     }
   }, [score]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2139,8 +2108,7 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
 
 
   const updateParticles = (gameState: GameState) => {
-    for (let i = gameState.particles.length - 1; i >= 0; i--) {
-      const particle = gameState.particles[i];
+    gameState.particles.forEach((particle: Particle, index: number) => {
       particle.x += particle.velocityX;
       particle.y += particle.velocityY;
       particle.velocityY += 0.2; // Gravity
@@ -2148,9 +2116,9 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
       particle.size *= 0.98;
       
       if (particle.life <= 0 || particle.size < 0.5) {
-        gameState.particles.splice(i, 1);
+        gameState.particles.splice(index, 1);
       }
-    }
+    });
   };
 
   const drawParticles = (ctx: CanvasRenderingContext2D, particles: Particle[]) => {
@@ -2237,20 +2205,41 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     }
   };
 
+  const saveScore = useCallback(async () => {
+    if (!playerAddress || score === 0) {
+      setSaveMessage('Kaydedilecek skor yok!');
+      setTimeout(() => setSaveMessage(''), 3000);
+      return;
+    }
+
+    setIsSavingScore(true);
+    setSaveMessage('');
+
+    try {
+      const result = await submitPlayerScore(playerAddress, score, 1);
+      
+      if (result.success) {
+        setSaveMessage(`✅ Skor kaydedildi! TX: ${result.transactionHash?.slice(0, 8)}...`);
+        console.log(`Transaction confirmed: https://testnet.monadscan.com/tx/${result.transactionHash}`);
+      } else {
+        setSaveMessage(`❌ Hata: ${result.error || 'Bilinmeyen hata'}`);
+      }
+    } catch (error) {
+      console.error('Score save error:', error);
+      setSaveMessage('❌ Skor kaydedilemedi!');
+    } finally {
+      setIsSavingScore(false);
+      setTimeout(() => setSaveMessage(''), 5000);
+    }
+  }, [playerAddress, score]);
+
   const startGame = useCallback(() => {
-    // Reset game state
     setGameStarted(true);
     setGameOver(false);
     setScore(0);
     setDistance(0);
     setSaveMessage('');
 
-    // Create a new session when game starts
-    if (playerAddress) {
-      createNewSession(playerAddress);
-    }
-
-    // Reset game state ref
     gameStateRef.current = {
       player: {
         x: 100,
@@ -2289,129 +2278,12 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
       rocketCooldown: 0
     };
 
-    // Start game loop
     if (gameLoopRef.current) {
       cancelAnimationFrame(gameLoopRef.current);
     }
-    gameLoopRef.current = requestAnimationFrame(gameLoop);
-  }, [playerAddress, gameLoop]);
+    gameLoop();
+  }, [gameLoop]);
 
-  // Create a new session when game starts
-  const createNewSession = useCallback(async (playerAddr: string) => {
-    try {
-      // In a real implementation, you would generate proper encoded keys
-      const encodedKeys = btoa(JSON.stringify({
-        playerAddress: playerAddr,
-        timestamp: Date.now(),
-        gameId: 'nadmetry-dash'
-      }));
-      
-      const newSessionId = await createSession(playerAddr, encodedKeys);
-      if (newSessionId) {
-        setSessionId(newSessionId);
-        console.log('Session created:', newSessionId);
-      } else {
-        console.error('Failed to create session');
-        setSaveMessage('❌ Oturum oluşturulamadı! Lütfen tekrar deneyin.');
-        setTimeout(() => setSaveMessage(''), 3000);
-        // Continue game even without session for better user experience
-      }
-    } catch (error) {
-      console.error('Error creating session:', error);
-      setSaveMessage('❌ Oturum oluşturulurken hata oluştu!');
-      setTimeout(() => setSaveMessage(''), 3000);
-      // Continue game even without session for better user experience
-    }
-  }, []);
-
-  // Update the saveScore function with better error handling
-  const saveScore = useCallback(async () => {
-    if (!playerAddress || score === 0) {
-      setSaveMessage('Kaydedilecek skor yok!');
-      setTimeout(() => setSaveMessage(''), 3000);
-      return;
-    }
-
-    // If no session, try to create one or continue without session-based verification
-    if (!sessionId) {
-      setSaveMessage('⚠️ Oturum bulunamadı, doğrulama yapılmayacak.');
-      // We'll proceed with a direct score submission without hash verification
-      try {
-        setIsSavingScore(true);
-        const result = await submitPlayerScore(playerAddress, score, 1);
-        if (result.success) {
-          setSaveMessage(`✅ Skor kaydedildi! TX: ${result.transactionHash?.slice(0, 8)}...`);
-          console.log(`Transaction confirmed: https://testnet.monadscan.com/tx/${result.transactionHash}`);
-        } else {
-          setSaveMessage(`❌ Hata: ${result.error || 'Bilinmeyen hata'}`);
-        }
-      } catch (error) {
-        console.error('Score save error:', error);
-        setSaveMessage('❌ Skor kaydedilemedi! Ağ hatası oluştu.');
-      } finally {
-        setIsSavingScore(false);
-      }
-      return;
-    }
-
-    setIsSavingScore(true);
-    setSaveMessage('');
-
-    try {
-      // Generate hash for score verification
-      const additionalData = {
-        distance: distance,
-        theme: gameStateRef.current.currentTheme,
-        mode: gameStateRef.current.player.mode
-      };
-      
-      // Submit score with hash verification
-      const result = await submitScoreWithHash(score, additionalData);
-
-      if (result.success) {
-        setSaveMessage(`✅ Skor kaydedildi! TX: ${result.transactionHash?.slice(0, 8)}...`);
-        console.log(`Transaction confirmed: https://testnet.monadscan.com/tx/${result.transactionHash}`);
-      } else {
-        // Check if this is a server wallet funding issue
-        if (result.error?.includes('SERVER WALLET ISSUE') || result.error?.includes('insufficient MON tokens')) {
-          setSaveMessage(`❌ Sunucu cüzdanı MON token yetersiz! Lütfen oyun geliştiricisine bildirin. Hata: ${result.error}`);
-        } else if (result.error?.includes('Unauthorized') || result.error?.includes('GAME_ROLE')) {
-          setSaveMessage(`❌ Sunucu cüzdanı oyun rolüne sahip değil! Lütfen oyun geliştiricisine bildirin. Hata: ${result.error}`);
-        } else if (result.error?.includes('Invalid score hash')) {
-          setSaveMessage(`❌ Skor doğrulaması başarısız! Hile tespit edildi. Hata: ${result.error}`);
-        } else if (result.error?.includes('Invalid or expired session')) {
-          setSaveMessage(`❌ Oturum süresi dolmuş! Lütfen yeni oyun başlatın. Hata: ${result.error}`);
-        } else {
-          // Fallback to direct submission if hash verification fails
-          setSaveMessage('⚠️ Doğrulama başarısız, doğrudan gönderiliyor...');
-          const directResult = await submitPlayerScore(playerAddress, score, 1);
-          if (directResult.success) {
-            setSaveMessage(`✅ Skor kaydedildi! TX: ${directResult.transactionHash?.slice(0, 8)}...`);
-            console.log(`Transaction confirmed: https://testnet.monadscan.com/tx/${directResult.transactionHash}`);
-          } else {
-            setSaveMessage(`❌ Hata: ${directResult.error || 'Bilinmeyen hata'}`);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Score save error:', error);
-      setSaveMessage('❌ Skor kaydedilemedi! Ağ hatası oluştu.');
-    } finally {
-      setIsSavingScore(false);
-    }
-  }, [playerAddress, score, sessionId, distance]);
-
-  // Cleanup session when component unmounts
-  useEffect(() => {
-    return () => {
-      // Clean up game loop
-      if (gameLoopRef.current) {
-        cancelAnimationFrame(gameLoopRef.current);
-      }
-    };
-  }, []);
-
-  // Keyboard event handlers
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
@@ -2455,11 +2327,6 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
-      
-      // Clean up game loop
-      if (gameLoopRef.current) {
-        cancelAnimationFrame(gameLoopRef.current);
-      }
     };
   }, [startGame, gameOver]);
 

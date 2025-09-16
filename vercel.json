@@ -1,4 +1,19 @@
 {
   "name": "nadmetrydash",
-  "version": 2
+  "version": 2,
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/next"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/"
+    }
+  ],
+  "env": {
+    "NEXT_PUBLIC_APP_URL": "https://nadmetrydash-7apt4g328-xurrys-projects.vercel.app"
+  }
 }
