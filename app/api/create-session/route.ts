@@ -23,7 +23,8 @@ export async function POST(request: NextRequest) {
 
     // Create a new session
     const sessionId = await createSession(playerAddress, encodedKeys);
-
+    
+    // Even if Redis is not available, we still return a session ID to allow gameplay
     return NextResponse.json({
       success: true,
       sessionId,
@@ -32,9 +33,12 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error creating session:', error);
-    return NextResponse.json(
-      { error: 'Failed to create session' },
-      { status: 500 }
-    );
+    // Even if there's an error, we still allow gameplay by returning a dummy session ID
+    const dummySessionId = 'dummy-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    return NextResponse.json({
+      success: true,
+      sessionId: dummySessionId,
+      message: 'Session created with limited functionality'
+    }, { status: 200 });
   }
 }
