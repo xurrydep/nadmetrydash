@@ -77,7 +77,7 @@ function PrivyAuth({ onAddressChange }: { onAddressChange: (address: string) => 
             <span className="bg-white text-black mt-4 px-6 py-3 rounded-lg shadow hover:bg-white transition"> {monadUser.username} </span>
           ) : (
             <a 
-              href="https://monadclip.fun"
+              href="https://www.monadclip.fun"
               target="_blank"
               rel="noopener noreferrer"
               className="bg-yellow-600 text-white mt-4 px-6 py-3 rounded-lg shadow hover:bg-yellow-700 transition"
