@@ -546,9 +546,7 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
           },
           currentTheme: gameState.currentTheme,
           rocketModeActive: gameState.rocketModeActive
-        }).catch(error => {
-          console.error('Failed to update session game state:', error);
-          // Don't let session update failures freeze the game
+        }).catch(error => {          
         });
       }, 0);
     }
