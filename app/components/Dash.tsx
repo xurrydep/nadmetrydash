@@ -2130,7 +2130,8 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
 
 
   const updateParticles = (gameState: GameState) => {
-    gameState.particles.forEach((particle: Particle, index: number) => {
+    for (let i = gameState.particles.length - 1; i >= 0; i--) {
+      const particle = gameState.particles[i];
       particle.x += particle.velocityX;
       particle.y += particle.velocityY;
       particle.velocityY += 0.2; // Gravity
@@ -2138,9 +2139,9 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
       particle.size *= 0.98;
       
       if (particle.life <= 0 || particle.size < 0.5) {
-        gameState.particles.splice(index, 1);
+        gameState.particles.splice(i, 1);
       }
-    });
+    }
   };
 
   const drawParticles = (ctx: CanvasRenderingContext2D, particles: Particle[]) => {

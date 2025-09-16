@@ -1,5 +1,6 @@
 import { createClient } from 'redis';
 import { randomBytes } from 'crypto';
+import { createHash } from 'crypto';
 
 // Redis client initialization
 let redisClient: ReturnType<typeof createClient> | null = null;
@@ -24,7 +25,7 @@ export async function initRedis() {
 interface SessionData {
   playerAddress: string;
   encodedKeys: string;
-  gameState: any;
+  gameState: Record<string, unknown>;
   createdAt: number;
   expiresAt: number;
 }
@@ -79,7 +80,7 @@ export async function getSession(sessionId: string): Promise<SessionData | null>
 }
 
 // Update game state in session
-export async function updateGameState(sessionId: string, gameState: any): Promise<boolean> {
+export async function updateGameState(sessionId: string, gameState: Record<string, unknown>): Promise<boolean> {
   const session = await getSession(sessionId);
   if (!session) {
     return false;
@@ -97,7 +98,7 @@ export async function updateGameState(sessionId: string, gameState: any): Promis
 }
 
 // Get current game state from session
-export async function getGameState(sessionId: string): Promise<any | null> {
+export async function getGameState(sessionId: string): Promise<Record<string, unknown> | null> {
   const session = await getSession(sessionId);
   if (!session) {
     return null;
@@ -113,13 +114,13 @@ export async function deleteSession(sessionId: string): Promise<void> {
 }
 
 // Generate hash for score verification
-export function generateScoreHash(sessionId: string, score: number, additionalData: any = {}): string {
+export function generateScoreHash(sessionId: string, score: number, additionalData: Record<string, unknown> = {}): string {
   const data = `${sessionId}-${score}-${JSON.stringify(additionalData)}-${process.env.API_SECRET || 'fallback_secret'}`;
-  return require('crypto').createHash('sha256').update(data).digest('hex');
+  return createHash('sha256').update(data).digest('hex');
 }
 
 // Verify score hash
-export async function verifyScoreHash(sessionId: string, score: number, hash: string, additionalData: any = {}): Promise<boolean> {
+export async function verifyScoreHash(sessionId: string, score: number, hash: string, additionalData: Record<string, unknown> = {}): Promise<boolean> {
   const expectedHash = generateScoreHash(sessionId, score, additionalData);
   return expectedHash === hash;
 }
