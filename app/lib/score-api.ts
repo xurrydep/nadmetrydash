@@ -511,3 +511,107 @@ export class TransactionQueue {
     this.pendingBatch = [];
   }
 }
+
+// Session management functions
+let currentSessionId: string | null = null;
+
+// Create a new session when player starts the game
+export async function createSession(playerAddress: string, encodedKeys: string): Promise<string | null> {
+  try {
+    const response = await fetch('/api/create-session', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        playerAddress,
+        encodedKeys,
+      }),
+    });
+
+    const data = await response.json();
+    if (data.success) {
+      currentSessionId = data.sessionId;
+      return data.sessionId;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error creating session:', error);
+    return null;
+  }
+}
+
+// Update game state during gameplay
+export async function updateGameState(gameState: any): Promise<boolean> {
+  if (!currentSessionId) {
+    console.error('No active session');
+    return false;
+  }
+
+  try {
+    const response = await fetch('/api/update-game-state', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sessionId: currentSessionId,
+        gameState,
+      }),
+    });
+
+    const data = await response.json();
+    return data.success;
+  } catch (error) {
+    console.error('Error updating game state:', error);
+    return false;
+  }
+}
+
+// Generate hash for score verification
+export function generateScoreHash(score: number, additionalData: any = {}): string {
+  if (!currentSessionId) {
+    throw new Error('No active session');
+  }
+  
+  const data = `${currentSessionId}-${score}-${JSON.stringify(additionalData)}-${process.env.NEXT_PUBLIC_API_SECRET || 'fallback_secret'}`;
+  return require('crypto').createHash('sha256').update(data).digest('hex');
+}
+
+// Submit score with hash verification
+export async function submitScoreWithHash(score: number, additionalData: any = {}): Promise<ScoreSubmissionResponse> {
+  if (!currentSessionId) {
+    return {
+      success: false,
+      error: 'No active session',
+    };
+  }
+
+  try {
+    // Generate hash for verification
+    const hash = generateScoreHash(score, additionalData);
+
+    const response = await fetch('/api/submit-score', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sessionId: currentSessionId,
+        score,
+        hash,
+        additionalData,
+      }),
+    });
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error submitting score:', error);
+    return {
+      success: false,
+      error: 'Failed to submit score',
+    };
+  }
+}

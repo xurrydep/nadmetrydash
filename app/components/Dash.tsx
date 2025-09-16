@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { submitPlayerScore, getPlayerTotalData } from '../lib/score-api';
+import { createSession, updateGameState as updateSessionGameState, submitPlayerScore, getPlayerTotalData, submitScoreWithHash } from '../lib/score-api';
 import { GAME_CONFIG } from '../lib/game-config';
+
 
 
 interface Player {
@@ -453,6 +454,8 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
   const [distance, setDistance] = useState(0);
   const [isSavingScore, setIsSavingScore] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string>('');
+  // Add session state
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   const gameStateRef = useRef({
     player: {
@@ -526,6 +529,24 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     
     // Check for new movement abilities
     checkNewMovementAbilities(gameState, score);
+    
+    // Update game state in session periodically (every 100 distance units)
+    if (Math.floor(gameState.distance) % 100 === 0 && sessionId) {
+      updateSessionGameState({
+        score: gameState.score,
+        distance: gameState.distance,
+        player: {
+          x: gameState.player.x,
+          y: gameState.player.y,
+          mode: gameState.player.mode,
+          rocketFuel: gameState.player.rocketFuel
+        },
+        currentTheme: gameState.currentTheme,
+        rocketModeActive: gameState.rocketModeActive
+      }).catch(error => {
+        console.error('Failed to update session game state:', error);
+      });
+    }
     
     // Player physics
     const player = gameState.player;
@@ -2206,48 +2227,20 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     }
   };
 
-  const saveScore = useCallback(async () => {
-    if (!playerAddress || score === 0) {
-      setSaveMessage('Kaydedilecek skor yok!');
-      setTimeout(() => setSaveMessage(''), 3000);
-      return;
-    }
-
-    setIsSavingScore(true);
-    setSaveMessage('');
-
-    try {
-      const result = await submitPlayerScore(playerAddress, score, 1);
-      
-      if (result.success) {
-        setSaveMessage(`✅ Skor kaydedildi! TX: ${result.transactionHash?.slice(0, 8)}...`);
-        console.log(`Transaction confirmed: https://testnet.monadscan.com/tx/${result.transactionHash}`);
-      } else {
-        // Check if this is a server wallet funding issue
-        if (result.error?.includes('SERVER WALLET ISSUE') || result.error?.includes('insufficient MON tokens')) {
-          setSaveMessage(`❌ Sunucu cüzdanı MON token yetersiz! Lütfen oyun geliştiricisine bildirin. Hata: ${result.error}`);
-        } else if (result.error?.includes('Unauthorized') || result.error?.includes('GAME_ROLE')) {
-          setSaveMessage(`❌ Sunucu cüzdanı oyun rolüne sahip değil! Lütfen oyun geliştiricisine bildirin. Hata: ${result.error}`);
-        } else {
-          setSaveMessage(`❌ Hata: ${result.error || 'Bilinmeyen hata'}`);
-        }
-      }
-    } catch (error) {
-      console.error('Score save error:', error);
-      setSaveMessage('❌ Skor kaydedilemedi! Ağ hatası oluştu.');
-    } finally {
-      setIsSavingScore(false);
-      setTimeout(() => setSaveMessage(''), 5000);
-    }
-  }, [playerAddress, score]);
-
   const startGame = useCallback(() => {
+    // Reset game state
     setGameStarted(true);
     setGameOver(false);
     setScore(0);
     setDistance(0);
     setSaveMessage('');
 
+    // Create a new session when game starts
+    if (playerAddress) {
+      createNewSession(playerAddress);
+    }
+
+    // Reset game state ref
     gameStateRef.current = {
       player: {
         x: 100,
@@ -2286,12 +2279,103 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
       rocketCooldown: 0
     };
 
+    // Start game loop
     if (gameLoopRef.current) {
       cancelAnimationFrame(gameLoopRef.current);
     }
-    gameLoop();
-  }, [gameLoop]);
+    gameLoopRef.current = requestAnimationFrame(gameLoop);
+  }, [playerAddress, gameLoop]);
 
+  // Create a new session when game starts
+  const createNewSession = useCallback(async (playerAddr: string) => {
+    try {
+      // In a real implementation, you would generate proper encoded keys
+      const encodedKeys = btoa(JSON.stringify({
+        playerAddress: playerAddr,
+        timestamp: Date.now(),
+        gameId: 'nadmetry-dash'
+      }));
+      
+      const newSessionId = await createSession(playerAddr, encodedKeys);
+      if (newSessionId) {
+        setSessionId(newSessionId);
+        console.log('Session created:', newSessionId);
+      } else {
+        console.error('Failed to create session');
+        setSaveMessage('❌ Oturum oluşturulamadı! Lütfen tekrar deneyin.');
+        setTimeout(() => setSaveMessage(''), 3000);
+      }
+    } catch (error) {
+      console.error('Error creating session:', error);
+      setSaveMessage('❌ Oturum oluşturulurken hata oluştu!');
+      setTimeout(() => setSaveMessage(''), 3000);
+    }
+  }, []);
+
+  // Update the saveScore function with better error handling
+  const saveScore = useCallback(async () => {
+    if (!playerAddress || score === 0) {
+      setSaveMessage('Kaydedilecek skor yok!');
+      setTimeout(() => setSaveMessage(''), 3000);
+      return;
+    }
+
+    if (!sessionId) {
+      setSaveMessage('Oturum bulunamadı!');
+      setTimeout(() => setSaveMessage(''), 3000);
+      return;
+    }
+
+    setIsSavingScore(true);
+    setSaveMessage('');
+
+    try {
+      // Generate hash for score verification
+      const additionalData = {
+        distance: distance,
+        theme: gameStateRef.current.currentTheme,
+        mode: gameStateRef.current.player.mode
+      };
+      
+      // Submit score with hash verification
+      const result = await submitScoreWithHash(score, additionalData);
+
+      if (result.success) {
+        setSaveMessage(`✅ Skor kaydedildi! TX: ${result.transactionHash?.slice(0, 8)}...`);
+        console.log(`Transaction confirmed: https://testnet.monadscan.com/tx/${result.transactionHash}`);
+      } else {
+        // Check if this is a server wallet funding issue
+        if (result.error?.includes('SERVER WALLET ISSUE') || result.error?.includes('insufficient MON tokens')) {
+          setSaveMessage(`❌ Sunucu cüzdanı MON token yetersiz! Lütfen oyun geliştiricisine bildirin. Hata: ${result.error}`);
+        } else if (result.error?.includes('Unauthorized') || result.error?.includes('GAME_ROLE')) {
+          setSaveMessage(`❌ Sunucu cüzdanı oyun rolüne sahip değil! Lütfen oyun geliştiricisine bildirin. Hata: ${result.error}`);
+        } else if (result.error?.includes('Invalid score hash')) {
+          setSaveMessage(`❌ Skor doğrulaması başarısız! Hile tespit edildi. Hata: ${result.error}`);
+        } else if (result.error?.includes('Invalid or expired session')) {
+          setSaveMessage(`❌ Oturum süresi dolmuş! Lütfen yeni oyun başlatın. Hata: ${result.error}`);
+        } else {
+          setSaveMessage(`❌ Hata: ${result.error || 'Bilinmeyen hata'}`);
+        }
+      }
+    } catch (error) {
+      console.error('Score save error:', error);
+      setSaveMessage('❌ Skor kaydedilemedi! Ağ hatası oluştu.');
+    } finally {
+      setIsSavingScore(false);
+    }
+  }, [playerAddress, score, sessionId, distance]);
+
+  // Cleanup session when component unmounts
+  useEffect(() => {
+    return () => {
+      // Clean up game loop
+      if (gameLoopRef.current) {
+        cancelAnimationFrame(gameLoopRef.current);
+      }
+    };
+  }, []);
+
+  // Keyboard event handlers
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
@@ -2335,6 +2419,11 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      
+      // Clean up game loop
+      if (gameLoopRef.current) {
+        cancelAnimationFrame(gameLoopRef.current);
+      }
     };
   }, [startGame, gameOver]);
 
