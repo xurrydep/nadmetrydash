@@ -1,16 +1,8 @@
 // Client-side API helpers for score submission
-import { GAME_CONFIG } from './game-config';
 
 interface ScoreSubmissionResponse {
   success: boolean;
   transactionHash?: string;
-  message?: string;
-  error?: string;
-}
-
-interface MonadGamesSubmissionResponse {
-  success: boolean;
-  leaderboardId?: string;
   message?: string;
   error?: string;
 }
@@ -50,8 +42,7 @@ export async function getSessionToken(playerAddress: string): Promise<string | n
   try {
     // In a real implementation, you would sign a message with the user's wallet here
     const message = `Authenticate for score submission: ${playerAddress}`;
-    // For now, we'll generate a proper session token on the server side
-    // In a production environment, this should be replaced with actual wallet signing
+    const signedMessage = "dummy_signature"; // This should be replaced with actual wallet signing
     
     const response = await fetch('/api/get-session-token', {
       method: 'POST',
@@ -61,9 +52,7 @@ export async function getSessionToken(playerAddress: string): Promise<string | n
       body: JSON.stringify({
         playerAddress,
         message,
-        // In a real implementation, this would be an actual signature from the user's wallet
-        // For now, we'll send a placeholder that the server can recognize
-        signedMessage: "server_generated_token",
+        signedMessage,
       }),
     });
 
@@ -79,66 +68,26 @@ export async function getSessionToken(playerAddress: string): Promise<string | n
   }
 }
 
-// Submit score to Monad Games leaderboard
-export async function submitToMonadGamesLeaderboard(
-  playerAddress: string,
-  score: number
-): Promise<MonadGamesSubmissionResponse> {
-  try {
-    if (!GAME_CONFIG.MONAD_GAMES_ID) {
-      return {
-        success: false,
-        error: 'Monad Games ID not configured',
-      };
-    }
-
-    // Monad Games API endpoint (this would be the actual Monad Games API)
-    const response = await fetch('https://api.monadgames.com/leaderboard/submit', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GAME_CONFIG.MONAD_GAMES_ID}`,
-      },
-      body: JSON.stringify({
-        gameId: GAME_CONFIG.MONAD_GAMES_ID,
-        playerAddress,
-        score,
-        timestamp: Date.now(),
-      }),
-    });
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('Error submitting to Monad Games leaderboard:', error);
-    return {
-      success: false,
-      error: 'Failed to submit to leaderboard',
-    };
-  }
-}
-
 // Submit player score and transaction data to the contract
 export async function submitPlayerScore(
   playerAddress: string,
   scoreAmount: number,
   transactionAmount: number = 1,
-  sessionToken?: string | null,
-  submitToLeaderboard: boolean = true
+  sessionToken?: string
 ): Promise<ScoreSubmissionResponse> {
   try {
     // Get session token if not provided
     if (!sessionToken) {
-      sessionToken = await getSessionToken(playerAddress);
-      if (!sessionToken) {
+      const token = await getSessionToken(playerAddress);
+      if (!token) {
         return {
           success: false,
           error: 'Failed to authenticate. Please try again.',
         };
       }
+      sessionToken = token;
     }
 
-    // Submit to blockchain contract
     const response = await fetch('/api/update-player-data', {
       method: 'POST',
       headers: {
@@ -153,99 +102,12 @@ export async function submitPlayerScore(
     });
 
     const data = await response.json();
-    
-    // If blockchain submission successful and leaderboard submission requested
-    if (data.success && submitToLeaderboard) {
-      try {
-        const leaderboardResult = await submitToMonadGamesLeaderboard(playerAddress, scoreAmount);
-        if (leaderboardResult.success) {
-          console.log('Score also submitted to Monad Games leaderboard');
-        } else {
-          console.warn('Failed to submit to leaderboard:', leaderboardResult.error);
-        }
-      } catch (leaderboardError) {
-        console.warn('Leaderboard submission failed:', leaderboardError);
-        // Don't fail the main submission if leaderboard fails
-      }
-    }
-    
     return data;
   } catch (error) {
     console.error('Error submitting score:', error);
-    // Check if this is a network error that might indicate server wallet issues
-    if (error instanceof TypeError && error.message.includes('fetch')) {
-      return {
-        success: false,
-        error: 'Sunucuya bağlanılamadı. Sunucu cüzdanı MON token yetersiz olabilir. Lütfen oyun geliştiricisine bildirin.',
-      };
-    }
     return {
       success: false,
-      error: 'Failed to submit score: ' + (error instanceof Error ? error.message : 'Unknown error'),
-    };
-  }
-}
-
-// Submit multiple player scores and transaction data in a single batch to the contract
-export async function batchUpdatePlayerData(
-  playerAddress: string,
-  scoreTransactions: Array<{ scoreAmount: number; transactionAmount: number }>,
-  sessionToken?: string | null,
-  submitToLeaderboard: boolean = true
-): Promise<ScoreSubmissionResponse> {
-  try {
-    // Get session token if not provided
-    if (!sessionToken) {
-      sessionToken = await getSessionToken(playerAddress);
-      if (!sessionToken) {
-        return {
-          success: false,
-          error: 'Failed to authenticate. Please try again.',
-        };
-      }
-    }
-
-    // Combine all score and transaction amounts for batch submission
-    const totalScore = scoreTransactions.reduce((sum, item) => sum + item.scoreAmount, 0);
-    const totalTransactions = scoreTransactions.reduce((sum, item) => sum + item.transactionAmount, 0);
-
-    // Submit to blockchain contract
-    const response = await fetch('/api/update-player-data', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        playerAddress,
-        scoreAmount: totalScore,
-        transactionAmount: totalTransactions,
-        sessionToken,
-      }),
-    });
-
-    const data = await response.json();
-    
-    // If blockchain submission successful and leaderboard submission requested
-    if (data.success && submitToLeaderboard) {
-      try {
-        const leaderboardResult = await submitToMonadGamesLeaderboard(playerAddress, totalScore);
-        if (leaderboardResult.success) {
-          console.log('Score also submitted to Monad Games leaderboard');
-        } else {
-          console.warn('Failed to submit to leaderboard:', leaderboardResult.error);
-        }
-      } catch (leaderboardError) {
-        console.warn('Leaderboard submission failed:', leaderboardError);
-        // Don't fail the main submission if leaderboard fails
-      }
-    }
-    
-    return data;
-  } catch (error) {
-    console.error('Error submitting batch score:', error);
-    return {
-      success: false,
-      error: 'Failed to submit batch score',
+      error: 'Failed to submit score',
     };
   }
 }
@@ -275,26 +137,6 @@ export async function getPlayerGameData(
     return data;
   } catch (error) {
     console.error('Error getting player game data:', error);
-    return null;
-  }
-}
-
-// Get server wallet balance
-export async function getServerWalletBalance(): Promise<{ balance: number; address: string } | null> {
-  try {
-    const response = await fetch('/api/get-wallet-balance');
-    const data = await response.json();
-    
-    if (data.success) {
-      return {
-        balance: data.balance,
-        address: data.address
-      };
-    }
-    
-    return null;
-  } catch (error) {
-    console.error('Error getting server wallet balance:', error);
     return null;
   }
 }
@@ -468,7 +310,7 @@ export class TransactionQueue {
     });
     
     // Create combined transactions per player
-    batchByPlayer.forEach((transactions) => {
+    batchByPlayer.forEach((transactions, playerAddress) => {
       if (transactions.length === 1) {
         // Single transaction, add as is
         this.queue.push(transactions[0]);
