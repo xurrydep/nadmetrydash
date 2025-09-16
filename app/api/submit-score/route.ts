@@ -4,26 +4,6 @@ import { validateOrigin } from '@/app/lib/auth';
 import { submitPlayerScore } from '@/app/lib/score-api';
 
 export async function POST(request: NextRequest) {
-  // Add a timeout to prevent hanging
-  const timeoutPromise = new Promise<Response>((_, reject) => 
-    setTimeout(() => reject(new Error('Request timeout')), 10000) // 10 second timeout for blockchain operations
-  );
-  
-  const apiPromise = handleRequest(request);
-  
-  try {
-    const result = await Promise.race([apiPromise, timeoutPromise]);
-    return result;
-  } catch (error) {
-    console.error('Error submitting score (timeout or other error):', error);
-    return NextResponse.json(
-      { error: 'Failed to submit score (timeout)' },
-      { status: 500 }
-    );
-  }
-}
-
-async function handleRequest(request: NextRequest) {
   try {
     // Validate origin
     if (!validateOrigin(request)) {
@@ -35,52 +15,35 @@ async function handleRequest(request: NextRequest) {
 
     const { sessionId, score, hash, additionalData } = await request.json();
 
-    if (score === undefined) {
+    // Validate required fields
+    if (score === undefined || sessionId === undefined || hash === undefined) {
       return NextResponse.json(
-        { error: 'Missing required field: score' },
+        { error: 'Missing required fields: sessionId, score, hash' },
         { status: 400 }
       );
     }
 
-    // If we have session and hash data, verify them
-    if (sessionId && hash) {
-      // Verify session exists
-      const session = await getSession(sessionId);
-      if (!session) {
-        // If session doesn't exist but we have a score, we'll still try to submit it
-        console.warn('Invalid or expired session, but proceeding with score submission');
-      } else {
-        // Verify score hash
-        const isValidHash = await verifyScoreHash(sessionId, score, hash, additionalData);
-        if (!isValidHash) {
-          // For development/testing, we'll still allow the submission but log the issue
-          console.warn('Invalid score hash - possible tampering detected, but proceeding with score submission');
-        }
-      }
-    } else {
-      console.warn('No session or hash provided, proceeding with score submission without verification');
+    // Verify session exists
+    const session = await getSession(sessionId);
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Invalid or expired session' },
+        { status: 401 }
+      );
     }
 
-    // Get player address - from session if available, otherwise we can't submit
-    let playerAddress: string | null = null;
-    if (sessionId) {
-      const session = await getSession(sessionId);
-      if (session) {
-        playerAddress = session.playerAddress;
-      }
-    }
-    
-    // If we don't have player address, we can't submit the score
-    if (!playerAddress) {
+    // Verify score hash
+    const isValidHash = await verifyScoreHash(sessionId, score, hash, additionalData);
+    if (!isValidHash) {
       return NextResponse.json(
-        { error: 'Player address not available' },
+        { error: 'Invalid score hash - possible tampering detected' },
         { status: 400 }
       );
     }
 
-    // Submit score to blockchain using existing function
+    // Submit score to blockchain
     const result = await submitPlayerScore(
-      playerAddress,
+      session.playerAddress,
       score,
       1, // transaction amount
       undefined // session token (will be generated internally)

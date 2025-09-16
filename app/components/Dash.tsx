@@ -533,24 +533,20 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     // Update game state in session periodically (every 100 distance units)
     // Only try to update if we have a session
     if (sessionId && Math.floor(gameState.distance) % 100 === 0) {
-      // Make session update truly asynchronous and non-blocking
-      setTimeout(() => {
-        updateSessionGameState({
-          score: gameState.score,
-          distance: gameState.distance,
-          player: {
-            x: gameState.player.x,
-            y: gameState.player.y,
-            mode: gameState.player.mode,
-            rocketFuel: gameState.player.rocketFuel
-          },
-          currentTheme: gameState.currentTheme,
-          rocketModeActive: gameState.rocketModeActive
-        }).catch(error => {
-          console.error('Failed to update session game state:', error);
-          // Don't let session update failures freeze the game
-        });
-      }, 0);
+      updateSessionGameState({
+        score: gameState.score,
+        distance: gameState.distance,
+        player: {
+          x: gameState.player.x,
+          y: gameState.player.y,
+          mode: gameState.player.mode,
+          rocketFuel: gameState.player.rocketFuel
+        },
+        currentTheme: gameState.currentTheme,
+        rocketModeActive: gameState.rocketModeActive
+      }).catch(error => {
+        console.error('Failed to update session game state:', error);
+      });
     }
     
     // Player physics

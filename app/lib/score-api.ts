@@ -178,17 +178,10 @@ export async function createSession(playerAddress: string, encodedKeys: string):
       return data.sessionId;
     }
     
-    // Even if the API returns failure, we'll generate a dummy session ID to allow gameplay
-    console.warn('Session creation failed, generating dummy session ID');
-    const dummySessionId = 'dummy-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-    currentSessionId = dummySessionId;
-    return dummySessionId;
+    return null;
   } catch (error) {
     console.error('Error creating session:', error);
-    // Even if there's an error, we'll generate a dummy session ID to allow gameplay
-    const dummySessionId = 'dummy-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-    currentSessionId = dummySessionId;
-    return dummySessionId;
+    return null;
   }
 }
 
@@ -196,15 +189,10 @@ export async function createSession(playerAddress: string, encodedKeys: string):
 export async function updateGameState(gameState: GameStateUpdate): Promise<boolean> {
   if (!currentSessionId) {
     console.error('No active session');
-    // If there's no session, we still return true to avoid breaking the game
-    return true;
+    return false;
   }
 
   try {
-    // Add a timeout to prevent hanging
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-    
     const response = await fetch('/api/update-game-state', {
       method: 'POST',
       headers: {
@@ -214,18 +202,13 @@ export async function updateGameState(gameState: GameStateUpdate): Promise<boole
         sessionId: currentSessionId,
         gameState,
       }),
-      signal: controller.signal
     });
-    
-    clearTimeout(timeoutId);
-    
+
     const data = await response.json();
-    // Even if the API returns failure, we return true to keep the game running
-    return true;
+    return data.success;
   } catch (error) {
     console.error('Error updating game state:', error);
-    // Even if there's an error, we return true to keep the game running
-    return true;
+    return false;
   }
 }
 
@@ -251,8 +234,6 @@ export function generateScoreHash(score: number, additionalData: Record<string, 
 // Submit score with hash verification
 export async function submitScoreWithHash(score: number, additionalData: Record<string, unknown> = {}): Promise<ScoreSubmissionResponse> {
   if (!currentSessionId) {
-    // If there's no session, we'll try to submit the score directly
-    console.warn('No active session, submitting score without hash verification');
     return {
       success: false,
       error: 'No active session',
