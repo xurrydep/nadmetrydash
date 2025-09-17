@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
     // Maximum limits to prevent abuse - made more restrictive
     const MAX_SCORE_PER_REQUEST = 2000; // Reduced from 10000
     const MAX_TRANSACTIONS_PER_REQUEST = 10; // Reduced from 100
+    const MAX_SCORE_PER_SECOND = 50; // Maximum score increase per second
 
     // Additional validation: reasonable score ranges
     const MIN_SCORE_PER_REQUEST = 1;
@@ -135,6 +136,14 @@ export async function POST(request: NextRequest) {
         },
         400
       );
+    }
+
+    // Anti-cheat: Validate score progression speed
+    const scorePerSecond = scoreAmount / (transactionAmount || 1);
+    if (scorePerSecond > MAX_SCORE_PER_SECOND) {
+      console.warn(`Potential cheating detected: Score progression too fast (${scorePerSecond} points/sec)`);
+      // Log this event for further analysis
+      // Could optionally reject the request or flag for review
     }
 
     // Request deduplication

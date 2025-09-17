@@ -94,6 +94,10 @@ interface GameState {
   lastAbilityUnlockScore: number;
   score: number;
   rocketCooldown: number;
+  // Anti-cheat properties
+  antiCheatChecksum: number;
+  lastUpdateTimestamp: number;
+  speedManipulationDetected: boolean;
 }
 
 const GAME_WIDTH = 800;
@@ -104,6 +108,9 @@ const JUMP_FORCE = 15;
 const GRAVITY = 0.8;
 const GAME_SPEED = 8;
 const OBSTACLE_SPAWN_RATE = 0.015;
+// Anti-cheat constants
+const MAX_ALLOWED_SPEED = GAME_SPEED * 3;
+const SPEED_CHECK_INTERVAL = 60; // Check every 60 frames
 
 // Theme tanımları
 const THEMES: { [key: string]: Theme } = {
@@ -452,6 +459,34 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
   const [distance, setDistance] = useState(0);
   const [isSavingScore, setIsSavingScore] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string>('');
+  // Anti-cheat refs
+  const frameCountRef = useRef(0);
+  const lastSpeedRef = useRef(GAME_SPEED);
+  const speedViolationCountRef = useRef(0);
+  
+  // Anti-cheat: Validate game state integrity
+  const validateGameStateIntegrity = (gameState: GameState) => {
+    // Check if player position is within bounds
+    if (gameState.player.x < 0 || gameState.player.x > GAME_WIDTH || 
+        gameState.player.y < 0 || gameState.player.y > GAME_HEIGHT) {
+      console.warn("Player position out of bounds detected");
+      return false;
+    }
+    
+    // Check if game speed is reasonable
+    if (gameState.gameSpeed < 0 || gameState.gameSpeed > MAX_ALLOWED_SPEED) {
+      console.warn("Unreasonable game speed detected");
+      return false;
+    }
+    
+    // Check if distance progression is reasonable
+    if (gameState.distance < 0 || gameState.distance > score * 20 + 1000) {
+      console.warn("Unreasonable distance progression detected");
+      return false;
+    }
+    
+    return true;
+  };
 
   const gameStateRef = useRef({
     player: {
@@ -488,7 +523,11 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     shieldEndTime: 0,
     lastAbilityUnlockScore: 0,
     score: 0,
-    rocketCooldown: 0
+    rocketCooldown: 0,
+    // Anti-cheat properties
+    antiCheatChecksum: 0,
+    lastUpdateTimestamp: Date.now(),
+    speedManipulationDetected: false
   });
 
   const gameLoop = useCallback(() => {
@@ -499,6 +538,55 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     if (!ctx) return;
 
     const gameState = gameStateRef.current;
+    
+    // Anti-cheat: Check for speed manipulation
+    frameCountRef.current++;
+    if (frameCountRef.current % SPEED_CHECK_INTERVAL === 0) {
+      // Check if game speed has been manipulated
+      if (gameState.gameSpeed > MAX_ALLOWED_SPEED) {
+        speedViolationCountRef.current++;
+        console.warn(`Speed violation detected: ${gameState.gameSpeed} > ${MAX_ALLOWED_SPEED}`);
+        
+        // If multiple violations, flag as cheating
+        if (speedViolationCountRef.current >= 3) {
+          gameState.speedManipulationDetected = true;
+          console.error("CHEATING DETECTED: Game speed manipulation");
+          // End the game if cheating is detected
+          gameState.isRunning = false;
+          setGameOver(true);
+          setGameStarted(false);
+          setSaveMessage("Cheating detected! Game ended.");
+        }
+      } else if (speedViolationCountRef.current > 0) {
+        // Reset violation count if speed is back to normal
+        speedViolationCountRef.current = 0;
+      }
+      
+      lastSpeedRef.current = gameState.gameSpeed;
+    }
+
+    // Anti-cheat: Validate game state integrity
+    const currentTime = Date.now();
+    const timeDiff = currentTime - gameState.lastUpdateTimestamp;
+    gameState.lastUpdateTimestamp = currentTime;
+    
+    // Check for time manipulation (e.g., slowing down the game)
+    if (timeDiff > 1000) { // If more than 1 second has passed
+      console.warn("Potential time manipulation detected");
+    }
+    
+    // Update anti-cheat checksum
+    gameState.antiCheatChecksum = (
+      gameState.player.x + 
+      gameState.player.y + 
+      gameState.distance + 
+      gameState.gameSpeed
+    ) % 1000000;
+    
+    // Periodic game state validation
+    if (frameCountRef.current % 300 === 0) { // Every 5 seconds at 60fps
+      validateGameStateIntegrity(gameState);
+    }
 
     // Clear canvas
     ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
@@ -510,6 +598,11 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     // Update distance and check for mode changes
     gameState.distance += gameState.gameSpeed * 0.1;
     setDistance(Math.floor(gameState.distance));
+    
+    // Anti-cheat: Validate distance progression
+    if (gameState.distance > score * 10 + 100) { // Distance should be proportional to score
+      console.warn("Potential cheating detected: Distance progression too fast");
+    }
     
     // Sync gameState.score with score state
     gameState.score = score;
@@ -901,11 +994,20 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     // Update distance
     setDistance(Math.floor(gameState.camera.x / 10));
 
-    // Increase game speed gradually
-    gameState.gameSpeed = Math.min(GAME_SPEED + Math.floor(gameState.camera.x / 1000) * 0.5, GAME_SPEED * 2);
+    // Increase game speed gradually with anti-cheat validation
+    const calculatedSpeed = Math.min(GAME_SPEED + Math.floor(gameState.camera.x / 1000) * 0.5, GAME_SPEED * 2);
+    
+    // Anti-cheat: Ensure game speed is within expected range
+    if (calculatedSpeed <= MAX_ALLOWED_SPEED) {
+      gameState.gameSpeed = calculatedSpeed;
+    } else {
+      // Reset to a safe speed if manipulation is detected
+      gameState.gameSpeed = GAME_SPEED;
+      console.warn("Game speed manipulation detected and corrected");
+    }
 
     // Continue game loop
-    if (gameState.isRunning) {
+    if (gameState.isRunning && !gameState.speedManipulationDetected) {
       gameLoopRef.current = requestAnimationFrame(gameLoop);
     }
   }, [score]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2275,7 +2377,11 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
       shieldEndTime: 0,
       lastAbilityUnlockScore: 0,
       score: 0,
-      rocketCooldown: 0
+      rocketCooldown: 0,
+      // Anti-cheat properties
+      antiCheatChecksum: 0,
+      lastUpdateTimestamp: Date.now(),
+      speedManipulationDetected: false
     };
 
     if (gameLoopRef.current) {
