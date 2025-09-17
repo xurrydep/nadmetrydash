@@ -91,6 +91,89 @@ export function scoreRateLimit(
   return { allowed: true };
 }
 
+// Deduplication store for score submissions
+const scoreDeduplicationStore = new Map<string, number>(); // scoreHash -> timestamp
+
+export function isDuplicateScoreSubmission(
+  playerAddress: string,
+  scoreAmount: number,
+  gameStateHash?: string
+): boolean {
+  // Create a unique hash for this score submission
+  const scoreData = `${playerAddress}-${scoreAmount}-${gameStateHash || ''}-${Math.floor(Date.now() / 1000)}`;
+  const scoreHash = require('crypto').createHash('sha256').update(scoreData).digest('hex');
+  
+  const now = Date.now();
+  const existingTimestamp = scoreDeduplicationStore.get(scoreHash);
+  
+  // If we've seen this exact score submission in the last 10 minutes, it's a duplicate
+  if (existingTimestamp && now - existingTimestamp < 600000) { // 10 minutes
+    return true;
+  }
+  
+  // Store this submission
+  scoreDeduplicationStore.set(scoreHash, now);
+  
+  // Clean up old entries
+  for (const [hash, timestamp] of scoreDeduplicationStore.entries()) {
+    if (now - timestamp > 600000) { // 10 minutes
+      scoreDeduplicationStore.delete(hash);
+    }
+  }
+  
+  return false;
+}
+
+// Enhanced score validation function
+export function validateScoreSubmission(
+  playerAddress: string,
+  scoreAmount: number,
+  transactionAmount: number,
+  gameState?: { level?: number; score?: number }
+): { valid: boolean; error?: string } {
+  // Maximum limits to prevent abuse
+  const MAX_SCORE_PER_REQUEST = 1000;
+  const MAX_TRANSACTIONS_PER_REQUEST = 1;
+  const MAX_SCORE_PER_SECOND = 500;
+
+  // Validate input ranges
+  if (scoreAmount < 0 || transactionAmount < 0) {
+    return { valid: false, error: "Score and transaction amounts must be non-negative" };
+  }
+
+  if (scoreAmount > MAX_SCORE_PER_REQUEST || transactionAmount > MAX_TRANSACTIONS_PER_REQUEST) {
+    return { 
+      valid: false, 
+      error: `Amounts too large. Max score: ${MAX_SCORE_PER_REQUEST}, Max transactions: ${MAX_TRANSACTIONS_PER_REQUEST}` 
+    };
+  }
+
+  // Validate score progression speed (max 500 points per second)
+  const scorePerSecond = scoreAmount / (transactionAmount || 1);
+  if (scorePerSecond > MAX_SCORE_PER_SECOND) {
+    return { 
+      valid: false, 
+      error: `Score progression too fast. Maximum: ${MAX_SCORE_PER_SECOND} points per second` 
+    };
+  }
+
+  // If game state is provided, validate against it
+  if (gameState && gameState.score !== undefined) {
+    // Check if the submitted score matches the game state
+    if (scoreAmount !== gameState.score) {
+      return { valid: false, error: "Score mismatch with game state" };
+    }
+    
+    // Validate score against level (simple check)
+    const expectedMaxScore = (gameState.level || 1) * 1000;
+    if (scoreAmount > expectedMaxScore) {
+      return { valid: false, error: `Score too high for current level. Max for level: ${expectedMaxScore}` };
+    }
+  }
+
+  return { valid: true };
+}
+
 export function cleanupExpiredEntries() {
   const now = Date.now();
   for (const [key, entry] of rateLimitMap.entries()) {
@@ -103,6 +186,13 @@ export function cleanupExpiredEntries() {
   for (const [key, entry] of scoreRateLimitStore.entries()) {
     if (now > entry.resetTime) {
       scoreRateLimitStore.delete(key);
+    }
+  }
+  
+  // Clean up score deduplication entries
+  for (const [hash, timestamp] of scoreDeduplicationStore.entries()) {
+    if (now - timestamp > 600000) { // 10 minutes
+      scoreDeduplicationStore.delete(hash);
     }
   }
 }

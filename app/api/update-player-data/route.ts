@@ -12,7 +12,13 @@ import {
   validateOrigin,
   createAuthenticatedResponse,
 } from "@/app/lib/auth";
-import { rateLimit, scoreRateLimit, type RateLimitResult } from "@/app/lib/rate-limiter";
+import { 
+  rateLimit, 
+  scoreRateLimit, 
+  isDuplicateScoreSubmission, 
+  validateScoreSubmission,
+  type RateLimitResult 
+} from "@/app/lib/rate-limiter";
 import {
   generateRequestId,
   isDuplicateRequest,
@@ -32,13 +38,6 @@ const clientBehaviorPatterns = new Map<string, {
   requestCount: number; 
   lastRequestTime: number;
   suspiciousPatterns: string[];
-}>();
-
-// Anti-cheat: Track game sessions
-const gameSessions = new Map<string, { 
-  startedAt: number;
-  endedAt?: number;
-  scoreLimit: number; // Maximum score possible for this session
 }>();
 
 export async function POST(request: NextRequest) {
@@ -106,6 +105,15 @@ export async function POST(request: NextRequest) {
           resetTime: scoreRateLimitResult.resetTime,
         },
         429
+      );
+    }
+
+    // Anti-cheat: Check for duplicate score submissions
+    if (isDuplicateScoreSubmission(playerAddress, scoreAmount, gameStateHash)) {
+      console.warn(`Duplicate score submission detected from ${playerAddress}`);
+      return createAuthenticatedResponse(
+        { error: "Duplicate score submission detected" },
+        400
       );
     }
 
@@ -250,51 +258,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate that scoreAmount and transactionAmount are positive numbers
-    if (scoreAmount < 0 || transactionAmount < 0) {
+    // Enhanced score validation
+    const scoreValidation = validateScoreSubmission(playerAddress, scoreAmount, transactionAmount, gameState);
+    if (!scoreValidation.valid) {
       return createAuthenticatedResponse(
-        { error: "Score and transaction amounts must be non-negative" },
-        400
-      );
-    }
-
-    // Maximum limits to prevent abuse - made more reasonable for legitimate high scores
-    const MAX_SCORE_PER_REQUEST = 1000; // Reduced to 1000 as per requirement
-    const MAX_TRANSACTIONS_PER_REQUEST = 1; // Only 1 transaction per save score as per requirement
-    const MAX_SCORE_PER_SECOND = 500; // Maximum 500 points per second as per requirement
-
-    // Additional validation: reasonable score ranges
-    const MIN_SCORE_PER_REQUEST = 1;
-
-    if (
-      scoreAmount > MAX_SCORE_PER_REQUEST ||
-      transactionAmount > MAX_TRANSACTIONS_PER_REQUEST
-    ) {
-      clientBehavior.suspiciousPatterns.push('excessive_amounts');
-      return createAuthenticatedResponse(
-        {
-          error: `Amounts too large. Max score: ${MAX_SCORE_PER_REQUEST}, Max transactions: ${MAX_TRANSACTIONS_PER_REQUEST}`,
-        },
-        400
-      );
-    }
-
-    if (scoreAmount < MIN_SCORE_PER_REQUEST && scoreAmount !== 0) {
-      return createAuthenticatedResponse(
-        { error: `Score amount too small. Minimum: ${MIN_SCORE_PER_REQUEST}` },
-        400
-      );
-    }
-
-    // Anti-cheat: Validate score progression speed (max 500 points per second)
-    const scorePerSecond = scoreAmount / (transactionAmount || 1);
-    if (scorePerSecond > MAX_SCORE_PER_SECOND) {
-      console.warn(`Potential cheating detected: Score progression too fast (${scorePerSecond} points/sec)`);
-      clientBehavior.suspiciousPatterns.push('fast_progression');
-      return createAuthenticatedResponse(
-        {
-          error: `Score progression too fast. Maximum: ${MAX_SCORE_PER_SECOND} points per second`,
-        },
+        { error: scoreValidation.error },
         400
       );
     }
