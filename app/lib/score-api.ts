@@ -5,6 +5,7 @@ interface ScoreSubmissionResponse {
   transactionHash?: string;
   message?: string;
   error?: string;
+  debug?: Record<string, unknown>; // Add debug property for development
 }
 
 interface QueuedTransaction {
@@ -43,7 +44,7 @@ function generateUniqueRequestId(): string {
 }
 
 // Get session token for authenticated requests
-export async function getSessionToken(playerAddress: string): Promise<string | null> {
+export async function getSessionToken(playerAddress: string, gameState?: { level?: number; score?: number; gameId?: string }): Promise<string | null> {
   try {
     // In a real implementation, you would sign a message with the user's wallet here
     const timestamp = Date.now();
@@ -62,14 +63,17 @@ export async function getSessionToken(playerAddress: string): Promise<string | n
         playerAddress,
         message,
         signedMessage,
+        gameState, // Include game state in token request
       }),
     });
 
     const data = await response.json();
+    console.log('Session token response:', data);
     if (data.success) {
       return data.sessionToken;
     }
     
+    console.error('Failed to get session token:', data.error);
     return null;
   } catch (error) {
     console.error('Error getting session token:', error);
@@ -82,12 +86,14 @@ export async function submitPlayerScore(
   playerAddress: string,
   scoreAmount: number,
   transactionAmount: number = 1,
-  sessionToken?: string
+  sessionToken?: string,
+  gameStateHash?: string,
+  gameState?: { level?: number; score?: number; gameId?: string }
 ): Promise<ScoreSubmissionResponse> {
   try {
     // Get session token if not provided
     if (!sessionToken) {
-      const token = await getSessionToken(playerAddress);
+      const token = await getSessionToken(playerAddress, gameState);
       if (!token) {
         return {
           success: false,
@@ -125,10 +131,39 @@ export async function submitPlayerScore(
         scoreAmount,
         transactionAmount,
         sessionToken,
+        gameStateHash, // Include the game state hash
+        gameState, // Include game state for token validation
       }),
     });
 
     const data = await response.json();
+    
+    // If we get a 401 error, try to get a new session token and retry once
+    if (response.status === 401 && !sessionToken) {
+      console.log('Retrying with new session token due to 401 error');
+      const newToken = await getSessionToken(playerAddress, gameState);
+      if (newToken) {
+        const retryResponse = await fetch('/api/update-player-data', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Request-ID': generateUniqueRequestId(),
+          },
+          body: JSON.stringify({
+            playerAddress,
+            scoreAmount,
+            transactionAmount,
+            sessionToken: newToken,
+            gameStateHash,
+            gameState,
+          }),
+        });
+        
+        const retryData = await retryResponse.json();
+        return retryData;
+      }
+    }
+    
     return data;
   } catch (error) {
     console.error('Error submitting score:', error);

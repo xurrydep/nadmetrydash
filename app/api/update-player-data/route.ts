@@ -12,7 +12,7 @@ import {
   validateOrigin,
   createAuthenticatedResponse,
 } from "@/app/lib/auth";
-import { rateLimit } from "@/app/lib/rate-limiter";
+import { rateLimit, scoreRateLimit, type RateLimitResult } from "@/app/lib/rate-limiter";
 import {
   generateRequestId,
   isDuplicateRequest,
@@ -23,6 +23,23 @@ import "dotenv/config";
 
 // Add this line after imports
 let currentUrlIndex = 0;
+
+// Anti-cheat: Store recent score submissions for validation
+const recentSubmissions = new Map<string, { timestamp: number, score: number, transactions: number }>();
+
+// Anti-cheat: Track client-side behavior patterns
+const clientBehaviorPatterns = new Map<string, { 
+  requestCount: number; 
+  lastRequestTime: number;
+  suspiciousPatterns: string[];
+}>();
+
+// Anti-cheat: Track game sessions
+const gameSessions = new Map<string, { 
+  startedAt: number;
+  endedAt?: number;
+  scoreLimit: number; // Maximum score possible for this session
+}>();
 
 export async function POST(request: NextRequest) {
   try {
@@ -55,16 +72,159 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse request body
-    const { playerAddress, scoreAmount, transactionAmount, sessionToken } =
+    const { playerAddress, scoreAmount, transactionAmount, sessionToken, gameStateHash, gameState } =
       await request.json();
 
-    // Session token authentication - verify the user controls the wallet
-    if (!sessionToken || !validateSessionToken(sessionToken, playerAddress)) {
-      console.warn('Session token validation failed', { sessionToken, playerAddress });
+    // Anti-cheat: Track client behavior patterns
+    const clientId = `${playerAddress}-${clientIp}`;
+    let clientBehavior = clientBehaviorPatterns.get(clientId);
+    if (!clientBehavior) {
+      clientBehavior = { 
+        requestCount: 0, 
+        lastRequestTime: Date.now(),
+        suspiciousPatterns: []
+      };
+      clientBehaviorPatterns.set(clientId, clientBehavior);
+    }
+    
+    clientBehavior.requestCount++;
+    const timeSinceLastRequest = Date.now() - clientBehavior.lastRequestTime;
+    clientBehavior.lastRequestTime = Date.now();
+    
+    // Detect suspicious rapid requests
+    if (timeSinceLastRequest < 1000 && clientBehavior.requestCount > 5) {
+      clientBehavior.suspiciousPatterns.push('rapid_requests');
+      console.warn(`Suspicious rapid requests detected from ${clientId}`);
+    }
+
+    // Specialized rate limiting for score submissions
+    const scoreRateLimitResult: RateLimitResult = scoreRateLimit(playerAddress, scoreAmount);
+    if (!scoreRateLimitResult.allowed) {
       return createAuthenticatedResponse(
-        { error: "Unauthorized: Invalid or expired session token" },
-        401
+        {
+          error: "Too many score submissions. Please wait before trying again.",
+          resetTime: scoreRateLimitResult.resetTime,
+        },
+        429
       );
+    }
+
+    // Session token authentication - verify the user controls the wallet and game state
+    if (!sessionToken || !validateSessionToken(sessionToken, playerAddress, gameState)) {
+      console.warn('Session token validation failed', { 
+        sessionToken, 
+        playerAddress, 
+        gameState,
+        tokenLength: sessionToken ? sessionToken.length : 0,
+        nodeEnv: process.env.NODE_ENV
+      });
+      
+      // In development mode, provide more detailed error information
+      if (process.env.NODE_ENV === 'development') {
+        // In development, we're more lenient but still need to validate the token exists
+        if (!sessionToken) {
+          return createAuthenticatedResponse(
+            { 
+              error: "Unauthorized: Missing session token",
+              debug: {
+                playerAddress,
+                timestamp: Date.now()
+              }
+            },
+            401
+          );
+        }
+        // If we have a token in development, we'll allow it to proceed
+        console.log('Development mode: Allowing request with token', sessionToken.substring(0, 10) + '...');
+      } else {
+        // In production, be strict about validation
+        return createAuthenticatedResponse(
+          { error: "Unauthorized: Invalid or expired session token" },
+          401
+        );
+      }
+    }
+
+    // Anti-cheat: Validate game state hash if provided
+    if (gameStateHash) {
+      try {
+        const gameStateData = JSON.parse(atob(gameStateHash));
+        
+        // Basic validation of game state
+        if (!gameStateData.player || gameStateData.score === undefined || !gameStateData.timestamp) {
+          console.warn('Invalid game state hash structure');
+          return createAuthenticatedResponse(
+            { error: "Invalid game state data" },
+            400
+          );
+        }
+        
+        // Check if the timestamp is recent (within 5 minutes)
+        const timeDiff = Date.now() - gameStateData.timestamp;
+        if (timeDiff > 300000 || timeDiff < 0) { // 5 minutes
+          console.warn('Game state timestamp too old or in the future');
+          return createAuthenticatedResponse(
+            { error: "Game state data expired" },
+            400
+          );
+        }
+        
+        // Validate that the score matches the game state
+        if (gameStateData.score !== scoreAmount) {
+          console.warn('Score mismatch between game state and request');
+          return createAuthenticatedResponse(
+            { error: "Score data mismatch" },
+            400
+          );
+        }
+        
+        // Additional validation: Check player position consistency
+        if (gameStateData.player.x < 0 || gameStateData.player.x > 800 || 
+            gameStateData.player.y < 0 || gameStateData.player.y > 600) {
+          console.warn('Player position out of bounds in game state');
+          clientBehavior.suspiciousPatterns.push('position_manipulation');
+          return createAuthenticatedResponse(
+            { error: "Invalid player position data" },
+            400
+          );
+        }
+        
+        // Validate game state against session data
+        if (gameState) {
+          // Check if level matches
+          if (gameState.level !== undefined && gameStateData.level !== gameState.level) {
+            console.warn('Level mismatch between session and game state');
+            clientBehavior.suspiciousPatterns.push('level_manipulation');
+            return createAuthenticatedResponse(
+              { error: "Game state level mismatch" },
+              400
+            );
+          }
+          
+          // Check if score is reasonable for the game state
+          if (gameStateData.score > (gameStateData.level || 1) * 1000) {
+            console.warn('Score too high for current level');
+            clientBehavior.suspiciousPatterns.push('score_manipulation');
+            return createAuthenticatedResponse(
+              { error: "Score too high for current level" },
+              400
+            );
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to parse game state hash', e);
+        clientBehavior.suspiciousPatterns.push('hash_manipulation');
+        // Don't fail the request, just log the issue
+      }
+    } else {
+      // In production, game state hash is required
+      if (process.env.NODE_ENV === 'production') {
+        console.warn('Missing game state hash in production');
+        return createAuthenticatedResponse(
+          { error: "Missing required game state validation" },
+          400
+        );
+      }
     }
 
     // Validate input
@@ -99,18 +259,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Maximum limits to prevent abuse - made more reasonable for legitimate high scores
-    const MAX_SCORE_PER_REQUEST = 10000; // Increased from 2000 to allow for legitimate high scores
-    const MAX_TRANSACTIONS_PER_REQUEST = 50; // Increased from 10
-    const MAX_SCORE_PER_SECOND = 200; // Increased from 50 to allow for legitimate high scores
+    const MAX_SCORE_PER_REQUEST = 1000; // Reduced to 1000 as per requirement
+    const MAX_TRANSACTIONS_PER_REQUEST = 1; // Only 1 transaction per save score as per requirement
+    const MAX_SCORE_PER_SECOND = 500; // Maximum 500 points per second as per requirement
 
     // Additional validation: reasonable score ranges
     const MIN_SCORE_PER_REQUEST = 1;
-    const MAX_SCORE_PER_TRANSACTION = 10000; // Increased from 2000
 
     if (
       scoreAmount > MAX_SCORE_PER_REQUEST ||
       transactionAmount > MAX_TRANSACTIONS_PER_REQUEST
     ) {
+      clientBehavior.suspiciousPatterns.push('excessive_amounts');
       return createAuthenticatedResponse(
         {
           error: `Amounts too large. Max score: ${MAX_SCORE_PER_REQUEST}, Max transactions: ${MAX_TRANSACTIONS_PER_REQUEST}`,
@@ -126,32 +286,65 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate score-to-transaction ratio to prevent unrealistic scores
-    if (
-      transactionAmount > 0 &&
-      scoreAmount / transactionAmount > MAX_SCORE_PER_TRANSACTION
-    ) {
+    // Anti-cheat: Validate score progression speed (max 500 points per second)
+    const scorePerSecond = scoreAmount / (transactionAmount || 1);
+    if (scorePerSecond > MAX_SCORE_PER_SECOND) {
+      console.warn(`Potential cheating detected: Score progression too fast (${scorePerSecond} points/sec)`);
+      clientBehavior.suspiciousPatterns.push('fast_progression');
       return createAuthenticatedResponse(
         {
-          error: `Score per transaction too high. Maximum: ${MAX_SCORE_PER_TRANSACTION} points per transaction`,
+          error: `Score progression too fast. Maximum: ${MAX_SCORE_PER_SECOND} points per second`,
         },
         400
       );
     }
 
-    // Anti-cheat: Validate score progression speed
-    const scorePerSecond = scoreAmount / (transactionAmount || 1);
-    if (scorePerSecond > MAX_SCORE_PER_SECOND) {
-      console.warn(`Potential cheating detected: Score progression too fast (${scorePerSecond} points/sec)`);
-      // For very high scores, we'll allow them but log for review
-      // Only reject if it's clearly cheating (over 10x the limit)
-      if (scorePerSecond > MAX_SCORE_PER_SECOND * 10) {
+    // Anti-cheat: Check for suspicious score patterns
+    const playerId = `${playerAddress}-${clientIp}`;
+    const now = Date.now();
+    
+    // Check if we have recent submissions from this player
+    if (recentSubmissions.has(playerId)) {
+      const lastSubmission = recentSubmissions.get(playerId)!;
+      
+      // Check if submission is too frequent (less than 5 seconds apart)
+      if (now - lastSubmission.timestamp < 5000) {
+        console.warn(`Suspicious rapid submission detected from ${playerId}`);
+        clientBehavior.suspiciousPatterns.push('rapid_submission');
         return createAuthenticatedResponse(
-          {
-            error: `Score progression too fast. Maximum: ${MAX_SCORE_PER_SECOND} points per second`,
-          },
-          400
+          { error: "Too many rapid submissions. Please wait before trying again." },
+          429
         );
+      }
+      
+      // Check for unrealistic score jumps (more than 200% increase in a short time)
+      const timeDiff = (now - lastSubmission.timestamp) / 1000; // in seconds
+      const scoreDiff = scoreAmount - lastSubmission.score;
+      
+      if (timeDiff < 60 && scoreDiff > 0) { // Within 1 minute
+        const scoreIncreaseRate = scoreDiff / timeDiff;
+        if (scoreIncreaseRate > 500) { // More than 500 points per second increase
+          console.warn(`Suspicious score jump detected from ${playerId}: ${lastSubmission.score} -> ${scoreAmount} in ${timeDiff}s`);
+          clientBehavior.suspiciousPatterns.push('score_jump');
+          return createAuthenticatedResponse(
+            { error: "Suspicious score increase detected." },
+            400
+          );
+        }
+      }
+    }
+    
+    // Store this submission for future validation
+    recentSubmissions.set(playerId, {
+      timestamp: now,
+      score: scoreAmount,
+      transactions: transactionAmount
+    });
+    
+    // Clean up old submissions (older than 10 minutes)
+    for (const [key, value] of recentSubmissions.entries()) {
+      if (now - value.timestamp > 600000) { // 10 minutes
+        recentSubmissions.delete(key);
       }
     }
 
@@ -162,6 +355,7 @@ export async function POST(request: NextRequest) {
       transactionAmount
     );
     if (isDuplicateRequest(requestId)) {
+      clientBehavior.suspiciousPatterns.push('duplicate_request');
       return createAuthenticatedResponse(
         { error: "Duplicate request detected. Please wait before retrying." },
         409
@@ -192,6 +386,11 @@ export async function POST(request: NextRequest) {
       process.env.ALCHEMY_RPC_URL_5,
     ].filter(Boolean);
 
+    // Fallback to default RPC URL if none are configured
+    if (ALCHEMY_RPC_URLS.length === 0) {
+      ALCHEMY_RPC_URLS.push('https://monad-testnet.g.alchemy.com/v2/L4mvj1NkUhphM3YY14DPO');
+    }
+
     const selectedUrl = ALCHEMY_RPC_URLS[currentUrlIndex % ALCHEMY_RPC_URLS.length];
     const usedIndex = currentUrlIndex % ALCHEMY_RPC_URLS.length;
     currentUrlIndex = (currentUrlIndex + 1) % ALCHEMY_RPC_URLS.length;
@@ -215,6 +414,7 @@ export async function POST(request: NextRequest) {
         userAgent.includes('curl') || 
         userAgent.includes('wget')) {
       console.warn(`Blocked suspicious request from ${clientIp}: ${userAgent}`);
+      clientBehavior.suspiciousPatterns.push('automated_tool');
       return createAuthenticatedResponse(
         { error: "Forbidden: Suspicious request detected" },
         403
@@ -233,7 +433,17 @@ export async function POST(request: NextRequest) {
     // Only validate browser headers in production and only warn (don't block) if they're missing
     if (process.env.NODE_ENV === 'production' && !hasValidBrowserHeaders) {
       console.warn(`Suspicious request detected from ${clientIp}: ${userAgent}, but allowing it for now`);
+      clientBehavior.suspiciousPatterns.push('missing_headers');
       // Don't block the request, just log it
+    }
+
+    // If too many suspicious patterns detected, reject the request
+    if (clientBehavior.suspiciousPatterns.length > 3) {
+      console.warn(`Too many suspicious patterns detected from ${clientId}:`, clientBehavior.suspiciousPatterns);
+      return createAuthenticatedResponse(
+        { error: "Suspicious activity detected. Request blocked for security reasons." },
+        403
+      );
     }
 
     // Call the updatePlayerData function

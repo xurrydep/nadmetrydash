@@ -2459,17 +2459,65 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
       return;
     }
 
+    // Anti-cheat: Validate that the score is reasonable based on game progression
+    const gameState = gameStateRef.current;
+    const maxReasonableScore = Math.floor(gameState.distance / 10) + 100; // Base score on distance traveled
+    
+    // Add a buffer for legitimate high scores
+    const reasonableScoreLimit = Math.min(maxReasonableScore * 3, 1000); // Max 1000 as per requirement
+    
+    if (score > reasonableScoreLimit) {
+      setSaveMessage('❌ Hata: Skor oyun ilerlemesine göre çok yüksek!');
+      setTimeout(() => setSaveMessage(''), 5000);
+      return;
+    }
+
     setIsSavingScore(true);
     setSaveMessage('');
 
     try {
-      const result = await submitPlayerScore(playerAddress, score, 1);
+      // Anti-cheat: Generate a comprehensive game state hash to validate on the server
+      const gameStateSnapshot = {
+        player: {
+          x: gameState.player.x,
+          y: gameState.player.y,
+          mode: gameState.player.mode,
+          rocketFuel: gameState.player.rocketFuel,
+          velocityY: gameState.player.velocityY,
+          onGround: gameState.player.onGround,
+          rotation: gameState.player.rotation,
+        },
+        distance: gameState.distance,
+        gameSpeed: gameState.gameSpeed,
+        score: score,
+        timestamp: Date.now(),
+        level: Math.floor(score / 100), // Simple level calculation based on score
+      };
+
+      const gameStateHash = btoa(JSON.stringify(gameStateSnapshot));
+      
+      // Include game state for token validation
+      const gameSessionState = {
+        level: Math.floor(score / 100),
+        score: score,
+        gameId: 'nadmetry-dash'
+      };
+
+      console.log('Attempting to save score:', { playerAddress, score, gameStateHash });
+      
+      const result = await submitPlayerScore(playerAddress, score, 1, undefined, gameStateHash, gameSessionState);
+      
+      console.log('Score submission result:', result);
       
       if (result.success) {
         setSaveMessage(`✅ Save Score! TX: ${result.transactionHash?.slice(0, 8)}...`);
         console.log(`Transaction confirmed: https://testnet.monadscan.com/tx/${result.transactionHash}`);
       } else {
         setSaveMessage(`❌ Hata: ${result.error || 'Bilinmeyen hata'}`);
+        // Type guard to check if debug property exists
+        if ('debug' in result && result.debug) {
+          console.log('Debug info:', result.debug);
+        }
       }
     } catch (error) {
       console.error('Score save error:', error);

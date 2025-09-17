@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { playerAddress, signedMessage, message } = await request.json();
+    const { playerAddress, signedMessage, message, gameState } = await request.json();
 
     if (!playerAddress || !signedMessage || !message) {
       return NextResponse.json(
@@ -30,6 +30,10 @@ export async function POST(request: NextRequest) {
 
     // Enhanced security: Add additional validation to prevent manual token generation
     const userAgent = request.headers.get('user-agent') || '';
+    const clientIp =
+      request.headers.get("x-forwarded-for") ||
+      request.headers.get("x-real-ip") ||
+      "unknown";
     
     // Block requests that look like they're from automated tools
     if (userAgent.includes('Postman') || 
@@ -56,21 +60,20 @@ export async function POST(request: NextRequest) {
       // Don't block the request, just log it
     }
 
-    // Check if this is a server-generated token request (for development/testing)
-    // In production, you should verify the signature using viem/ethers
-    let sessionToken: string;
-    if (signedMessage === "server_generated_token") {
-      // Generate session token for development/testing
-      const timestamp = Math.floor(Date.now() / 30000) * 30000; // Round to 30-second intervals
-      sessionToken = generateSessionToken(playerAddress, timestamp);
-      console.log('Generated server token for development', { playerAddress, timestamp, sessionToken });
-    } else {
-      // TODO: Add proper signature verification here using viem/ethers
-      // For now, we'll trust that the frontend provides the correct signature
-      const timestamp = Math.floor(Date.now() / 30000) * 30000; // Round to 30-second intervals
-      sessionToken = generateSessionToken(playerAddress, timestamp);
-      console.log('Generated token with signature', { playerAddress, timestamp, sessionToken, signedMessage });
+    // Generate session token with game state information
+    const timestamp = Math.floor(Date.now() / 30000) * 30000; // Round to 30-second intervals
+    
+    // Use appropriate IP identifier for development
+    let ipIdentifier = 'ip_unknown';
+    if (clientIp === 'localhost' || clientIp === '127.0.0.1' || clientIp === '::1') {
+      ipIdentifier = 'ip_localhost';
+    } else if (clientIp && clientIp !== 'unknown') {
+      ipIdentifier = `ip_${clientIp}`;
     }
+    
+    // Include game state in token generation
+    const sessionToken = generateSessionToken(playerAddress, timestamp, gameState || {}, ipIdentifier);
+    console.log('Generated token with game state', { playerAddress, timestamp, sessionToken, gameState, ipIdentifier });
 
     return NextResponse.json({
       success: true,

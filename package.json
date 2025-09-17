@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@privy-io/react-auth": "^2.21.3",
+    "mongoose": "^8.18.1",
     "next": "15.4.6",
     "react": "19.1.0",
     "react-dom": "19.1.0",
