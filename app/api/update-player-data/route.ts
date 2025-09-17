@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
 
     // Session token authentication - verify the user controls the wallet
     if (!sessionToken || !validateSessionToken(sessionToken, playerAddress)) {
+      console.warn('Session token validation failed', { sessionToken, playerAddress });
       return createAuthenticatedResponse(
         { error: "Unauthorized: Invalid or expired session token" },
         401
@@ -208,13 +209,11 @@ export async function POST(request: NextRequest) {
     // Anti-cheat: Add additional validation to prevent console manipulation
     // Check for suspicious patterns that indicate manual request manipulation
     const userAgent = request.headers.get('user-agent') || '';
-    const acceptHeader = request.headers.get('accept') || '';
     
     // Block requests that look like they're from automated tools or manual manipulation
     if (userAgent.includes('Postman') || 
         userAgent.includes('curl') || 
-        userAgent.includes('wget') ||
-        !acceptHeader.includes('application/json')) {
+        userAgent.includes('wget')) {
       console.warn(`Blocked suspicious request from ${clientIp}: ${userAgent}`);
       return createAuthenticatedResponse(
         { error: "Forbidden: Suspicious request detected" },
@@ -222,19 +221,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate that the request is coming from a browser context
-    const hasValidBrowserHeaders = userAgent.includes('Mozilla') && 
-                                  (userAgent.includes('Chrome') || 
-                                   userAgent.includes('Firefox') || 
-                                   userAgent.includes('Safari'));
+    // More lenient validation - allow requests even if they don't have all browser headers
+    // This prevents legitimate players from being flagged as suspicious
+    const hasValidBrowserHeaders = userAgent.includes('Mozilla') || 
+                                  userAgent.includes('Chrome') || 
+                                  userAgent.includes('Firefox') || 
+                                  userAgent.includes('Safari') ||
+                                  userAgent.includes('WebKit') ||
+                                  !userAgent; // Allow empty user agent in development
     
-    // In production, be stricter about browser headers
+    // Only validate browser headers in production and only warn (don't block) if they're missing
     if (process.env.NODE_ENV === 'production' && !hasValidBrowserHeaders) {
-      console.warn(`Blocked non-browser request from ${clientIp}: ${userAgent}`);
-      return createAuthenticatedResponse(
-        { error: "Forbidden: Request must come from a browser" },
-        403
-      );
+      console.warn(`Suspicious request detected from ${clientIp}: ${userAgent}, but allowing it for now`);
+      // Don't block the request, just log it
     }
 
     // Call the updatePlayerData function

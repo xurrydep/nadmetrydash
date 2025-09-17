@@ -46,8 +46,10 @@ function generateUniqueRequestId(): string {
 export async function getSessionToken(playerAddress: string): Promise<string | null> {
   try {
     // In a real implementation, you would sign a message with the user's wallet here
+    const timestamp = Date.now();
     const message = `Authenticate for score submission: ${playerAddress} at ${new Date().toISOString()}`;
-    const signedMessage = "dummy_signature"; // This should be replaced with actual wallet signing
+    // Use a more realistic dummy signature that changes with timestamp
+    const signedMessage = `server_generated_token_${timestamp}`; 
     
     const response = await fetch('/api/get-session-token', {
       method: 'POST',

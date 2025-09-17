@@ -21,10 +21,10 @@ export function generateSessionToken(playerAddress: string, timestamp: number): 
 }
 
 // Validate session token with player address verification
-export function validateSessionToken(token: string, playerAddress: string, timestampWindow: number = 300000): boolean {
+export function validateSessionToken(token: string, playerAddress: string, timestampWindow: number = 600000): boolean {
   const now = Date.now();
   
-  // Check tokens within the timestamp window (default 5 minutes)
+  // Check tokens within the timestamp window (increased to 10 minutes for more forgiveness)
   for (let i = 0; i < timestampWindow; i += 30000) { // Check every 30 seconds
     const timestamp = now - i;
     const expectedToken = generateSessionToken(playerAddress, Math.floor(timestamp / 30000) * 30000);

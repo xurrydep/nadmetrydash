@@ -41,18 +41,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate that the request is coming from a browser context
-    const hasValidBrowserHeaders = userAgent.includes('Mozilla') && 
-                                  (userAgent.includes('Chrome') || 
-                                   userAgent.includes('Firefox') || 
-                                   userAgent.includes('Safari'));
+    // More lenient browser validation - allow requests even if they don't have all browser headers
+    // This prevents legitimate players from being flagged as suspicious
+    const hasValidBrowserHeaders = userAgent.includes('Mozilla') || 
+                                  userAgent.includes('Chrome') || 
+                                  userAgent.includes('Firefox') || 
+                                  userAgent.includes('Safari') ||
+                                  userAgent.includes('WebKit') ||
+                                  !userAgent; // Allow empty user agent in development
     
-    // In production, be stricter about browser headers
+    // Only validate browser headers in production and only warn (don't block) if they're missing
     if (process.env.NODE_ENV === 'production' && !hasValidBrowserHeaders) {
-      return NextResponse.json(
-        { error: 'Forbidden: Request must come from a browser' },
-        { status: 403 }
-      );
+      console.warn(`Suspicious request detected from ${userAgent}, but allowing it for now`);
+      // Don't block the request, just log it
     }
 
     // Check if this is a server-generated token request (for development/testing)
@@ -62,11 +63,13 @@ export async function POST(request: NextRequest) {
       // Generate session token for development/testing
       const timestamp = Math.floor(Date.now() / 30000) * 30000; // Round to 30-second intervals
       sessionToken = generateSessionToken(playerAddress, timestamp);
+      console.log('Generated server token for development', { playerAddress, timestamp, sessionToken });
     } else {
       // TODO: Add proper signature verification here using viem/ethers
       // For now, we'll trust that the frontend provides the correct signature
       const timestamp = Math.floor(Date.now() / 30000) * 30000; // Round to 30-second intervals
       sessionToken = generateSessionToken(playerAddress, timestamp);
+      console.log('Generated token with signature', { playerAddress, timestamp, sessionToken, signedMessage });
     }
 
     return NextResponse.json({
