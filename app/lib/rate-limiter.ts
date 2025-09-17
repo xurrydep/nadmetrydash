@@ -43,8 +43,8 @@ export function scoreRateLimit(
   scoreAmount: number
 ): RateLimitResult {
   const now = Date.now();
-  const key = `score_${playerAddress}`;
-  const entry = scoreRateLimitStore.get(key);
+  // const key = `score_${playerAddress}`;
+  // const entry = scoreRateLimitStore.get(key);
 
   // Check if this is a suspiciously high score submission
   if (scoreAmount > 1000) { // Maximum score per request is 1000
@@ -69,27 +69,32 @@ export function scoreRateLimit(
     }
   }
 
-  if (!entry || entry.resetTime <= now) {
+  // For normal scores, allow more frequent submissions
+  // Allow up to 5 score submissions per 10 minutes
+  const normalScoreKey = `normal_score_${playerAddress}`;
+  const normalScoreEntry = scoreRateLimitStore.get(normalScoreKey);
+  
+  if (!normalScoreEntry || normalScoreEntry.resetTime <= now) {
     // First request or window has expired
-    scoreRateLimitStore.set(key, {
+    scoreRateLimitStore.set(normalScoreKey, {
       count: 1,
-      resetTime: now + 60000, // 1 minute window for score submissions
+      resetTime: now + 600000, // 10 minutes window for normal score submissions
     });
     return { allowed: true };
   }
 
-  // Only allow 1 save score per game as per requirement
-  if (entry.count >= 1) {
+  // Allow up to 5 submissions per 10 minutes
+  if (normalScoreEntry.count >= 5) {
     // Rate limit exceeded
     return {
       allowed: false,
-      resetTime: entry.resetTime,
+      resetTime: normalScoreEntry.resetTime,
     };
   }
 
   // Increment count
-  entry.count++;
-  scoreRateLimitStore.set(key, entry);
+  normalScoreEntry.count++;
+  scoreRateLimitStore.set(normalScoreKey, normalScoreEntry);
   return { allowed: true };
 }
 

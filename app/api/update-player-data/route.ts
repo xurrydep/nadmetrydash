@@ -101,8 +101,9 @@ export async function POST(request: NextRequest) {
     if (!scoreRateLimitResult.allowed) {
       return createAuthenticatedResponse(
         {
-          error: "Too many score submissions. Please wait before trying again.",
+          error: "You're submitting scores too frequently. Please wait before trying again.",
           resetTime: scoreRateLimitResult.resetTime,
+          message: "You can submit up to 5 scores every 10 minutes. This limit prevents abuse while allowing normal gameplay."
         },
         429
       );
