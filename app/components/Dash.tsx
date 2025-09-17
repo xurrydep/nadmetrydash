@@ -271,44 +271,180 @@ interface LeaderboardEntry {
   rank: number;
 }
 
+// New interface for MonadClip API response
+interface MonadClipLeaderboardEntry {
+  address: string;
+  displayName: string;
+  score: number; // Keep as number for consistency
+  timestamp: number;
+}
+
 interface LeaderboardSidebarProps {
   playerAddress: string;
   currentScore: number;
 }
 
+// LEADERBOARD FETCHING & DISPLAY
+class LeaderboardManager {
+  leaderboard: MonadClipLeaderboardEntry[] = [];
+  fullLeaderboard: MonadClipLeaderboardEntry[] = []; // Store full leaderboard data
+
+  async syncWithBlockchain() {
+    try {
+      // Clear existing leaderboard
+      this.leaderboard = [];
+      this.fullLeaderboard = [];
+      
+      // Fetch from proper JSON API endpoint sorted by scores
+      const baseUrl = 'https://www.monadclip.fun/api/leaderboard?gameId=7&sortBy=scores';
+      
+      // Try to fetch data directly first (to get score field)
+      let allData = [];
+      try {
+        const firstPageResponse = await fetch(`${baseUrl}&page=1`);
+        if (firstPageResponse.ok) {
+          const firstPageData = await firstPageResponse.json();
+          const totalPages = firstPageData.pagination?.totalPages || 1;
+          
+          console.log('Direct API access successful, pagination info:', firstPageData.pagination);
+          
+          // Fetch all pages directly
+          for (let page = 1; page <= Math.min(totalPages, 10); page++) { // Limit to 10 pages max for performance
+            try {
+              const response = await fetch(`${baseUrl}&page=${page}`);
+              if (response.ok) {
+                const data = await response.json();
+                if (data && data.data && Array.isArray(data.data)) {
+                  allData.push(...data.data);
+                  console.log(`Direct fetch page ${page} with ${data.data.length} entries`);
+                }
+              }
+            } catch (error) {
+              console.warn(`Failed to fetch page ${page} directly:`, error);
+            }
+          }
+        }
+      } catch (directError) {
+        console.log('Direct API access failed, falling back to CORS proxy:', directError);
+        
+        // Fallback to CORS proxy if direct access fails
+        try {
+          // First, get the first page to determine total pages
+          const firstPageResponse = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(baseUrl + '&page=1')}`);
+          
+          if (!firstPageResponse.ok) {
+            throw new Error(`Failed to fetch leaderboard: ${firstPageResponse.status}`);
+          }
+
+          const firstPageData = await firstPageResponse.json();
+          const totalPages = firstPageData.pagination?.totalPages || 1;
+          
+          console.log('Proxy pagination info:', firstPageData.pagination);
+          
+          // Fetch all pages through proxy
+          for (let page = 1; page <= Math.min(totalPages, 10); page++) { // Limit to 10 pages max for performance
+            try {
+              const response = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(baseUrl + `&page=${page}`)}`);
+              if (response.ok) {
+                const data = await response.json();
+                if (data && data.data && Array.isArray(data.data)) {
+                  allData.push(...data.data);
+                  console.log(`Proxy fetch page ${page} with ${data.data.length} entries`);
+                }
+              }
+            } catch (error) {
+              console.warn(`Failed to fetch page ${page} via proxy:`, error);
+            }
+          }
+        } catch (proxyError) {
+          console.error('Both direct and proxy access failed:', proxyError);
+          throw proxyError;
+        }
+      }
+      
+      console.log('📦 Full API Response:', { entries: allData.length });
+
+      // Process all API data with validation
+      if (allData.length > 0) {
+        // Store full leaderboard data with rank information from API
+        this.fullLeaderboard = allData.map((entry: any) => ({
+          address: entry.walletAddress,
+          displayName: entry.username || 'Anonymous',
+          // Use score field if available, otherwise fallback to transactionCount
+          score: parseInt(entry.score) || parseInt(entry.transactionCount) || 0,
+          timestamp: entry.timestamp || Date.now()
+        }));
+        
+        // Sort by score descending (using score field as score)
+        this.fullLeaderboard.sort((a, b) => b.score - a.score);
+        
+        // Set the displayed leaderboard to top 10
+        this.leaderboard = this.fullLeaderboard.slice(0, 10);
+        
+        // Log for debugging
+        console.log('Leaderboard data processed:', this.fullLeaderboard.slice(0, 3));
+      }
+    } catch (error) {
+      console.error('Error syncing with blockchain:', error);
+    }
+  }
+
+  getTopScores(limit = 10) {
+    return this.leaderboard.slice(0, limit); // Top 10 only
+  }
+
+  // Get player's actual rank from full leaderboard
+  getPlayerRank(playerAddress: string): number {
+    if (!playerAddress) return 0;
+    
+    // Find the player's position in the sorted leaderboard
+    const index = this.fullLeaderboard.findIndex(entry => 
+      entry.address.toLowerCase() === playerAddress.toLowerCase()
+    );
+    
+    // Return 1-based ranking, or -1 if not found (to indicate not found)
+    return index >= 0 ? index + 1 : -1;
+  }
+
+  formatScore(score: number) {
+    if (score === null || score === undefined || isNaN(score)) {
+      return '0'; // Safe fallback
+    }
+    return score.toLocaleString(); // 1,500 format
+  }
+
+  formatAddress(address: string) {
+    if (!address) return '0x0000...0000';
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  }
+}
+
 function LeaderboardSidebar({ playerAddress, currentScore }: LeaderboardSidebarProps) {
-  const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardData, setLeaderboardData] = useState<MonadClipLeaderboardEntry[]>([]);
   const [playerData, setPlayerData] = useState<{ totalScore: string; rank: number } | null>(null);
   const [loading, setLoading] = useState(false);
+  const leaderboardManagerRef = useRef(new LeaderboardManager());
 
   const fetchLeaderboardData = useCallback(async () => {
     setLoading(true);
     try {
-      // Real leaderboard data from Monad Games
-      const realLeaderboardData: LeaderboardEntry[] = [
-        { address: '0xeb92...85dE', nickname: 'ivanx4k', score: 1450, rank: 1 },
-        { address: '0xe4D7...D2c0', nickname: 'olanre', score: 1.130, rank: 2 },
-        { address: '0x11B5...440b', nickname: 'mimus', score: 1.080, rank: 3 },
-        { address: '0x5fA0...2193', nickname: 'consumeobeydie', score: 1060, rank: 4 },
-        { address: '0x0558...6EDe', nickname: 'alex6606', score: 650, rank: 5 },
-        { address: '0x06BD...4234', nickname: 'jeksonjs', score: 600, rank: 6 },
-        { address: '0x9A9F...9375', nickname: 'cj122623', score: 580, rank: 7 },
-        { address: '0x9EE1...0e4E', nickname: 'gore', score: 560, rank: 8 },
-        { address: '0xE321...aE37', nickname: 'veerabhadra11', score: 480, rank: 9 },
-        { address: '0xf31e...cFBA', nickname: 'g697', score: 230, rank: 10 },
-      ];
+      // Sync with MonadClip API
+      await leaderboardManagerRef.current.syncWithBlockchain();
+      
+      // Get the updated leaderboard data
+      const topScores = leaderboardManagerRef.current.getTopScores(10); // Top 10 only
+      setLeaderboardData(topScores);
       
       // Get player's actual data
       if (playerAddress) {
         const playerTotalData = await getPlayerTotalData(playerAddress);
         if (playerTotalData && playerTotalData.success) {
           const totalScore = parseInt(playerTotalData.totalScore);
-          const playerRank = realLeaderboardData.findIndex(entry => totalScore >= entry.score) + 1 || realLeaderboardData.length + 1;
+          // Use the new method to get player's actual rank from full leaderboard
+          const playerRank = leaderboardManagerRef.current.getPlayerRank(playerAddress);
           setPlayerData({ totalScore: playerTotalData.totalScore, rank: playerRank });
         }
       }
-      
-      setLeaderboardData(realLeaderboardData);
     } catch (error) {
       console.error('Error fetching leaderboard:', error);
     } finally {
@@ -335,7 +471,7 @@ function LeaderboardSidebar({ playerAddress, currentScore }: LeaderboardSidebarP
       {/* Header */}
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 mb-2">
-          🏆 Leaderboard Nads
+          🏆 Live Leaderboard
         </h2>
         <div className="h-1 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full shadow-lg shadow-purple-500/50"></div>
       </div>
@@ -356,8 +492,11 @@ function LeaderboardSidebar({ playerAddress, currentScore }: LeaderboardSidebarP
                   <span className="text-green-400 font-bold">{formatScore(parseInt(playerData.totalScore))}</span>
                 </div>
                 <div className="flex justify-between">
-                  
-                  </div>
+                  <span className="text-gray-300">Rank:</span>
+                  <span className="text-blue-400 font-bold">
+                    {playerData.rank === -1 ? 'Not ranked' : `#${playerData.rank}`}
+                  </span>
+                </div>
               </>
             )}
           </div>
@@ -366,21 +505,31 @@ function LeaderboardSidebar({ playerAddress, currentScore }: LeaderboardSidebarP
 
       {/* Leaderboard List */}
       <div className="space-y-3">
-        <h3 className="text-lg font-bold text-purple-300 mb-4">🎯 TOP 10 RANKING </h3>
+        <h3 className="text-lg font-bold text-purple-300 mb-4">🎯 TOP 10 PLAYERS</h3>
         
         {loading ? (
           <div className="text-center py-8">
             <div className="animate-spin w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full mx-auto mb-2"></div>
-            <p className="text-purple-300">Yükleniyor...</p>
+            <p className="text-purple-300">Loading leaderboard...</p>
+          </div>
+        ) : leaderboardData.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-purple-300">No leaderboard data available</p>
           </div>
         ) : (
           leaderboardData.map((entry, index) => {
-            const isCurrentPlayer = playerAddress && entry.address.toLowerCase().includes(playerAddress.toLowerCase().slice(2, 8));
+            // Debug log
+            console.log('Rendering leaderboard entry:', { entry, index });
+            
+            const isCurrentPlayer = playerAddress && 
+              entry.address.toLowerCase() === playerAddress.toLowerCase();
             const isTop3 = index < 3;
+            const rank = index + 1;
+            const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
             
             return (
               <div
-                key={entry.address}
+                key={`${entry.address}-${index}`}
                 className={`p-3 rounded-lg border transition-all duration-300 hover:scale-105 ${
                   isCurrentPlayer
                     ? 'bg-gradient-to-r from-yellow-800/40 to-orange-800/40 border-yellow-500/50 shadow-lg shadow-yellow-500/20'
@@ -396,24 +545,24 @@ function LeaderboardSidebar({ playerAddress, currentScore }: LeaderboardSidebarP
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                      index === 0 ? 'bg-gradient-to-r from-yellow-400 to-yellow-600 text-yellow-900' :
-                      index === 1 ? 'bg-gradient-to-r from-gray-300 to-gray-500 text-gray-900' :
-                      index === 2 ? 'bg-gradient-to-r from-orange-400 to-orange-600 text-orange-900' :
+                      rank === 1 ? 'bg-gradient-to-r from-yellow-400 to-yellow-600 text-yellow-900' :
+                      rank === 2 ? 'bg-gradient-to-r from-gray-300 to-gray-500 text-gray-900' :
+                      rank === 3 ? 'bg-gradient-to-r from-orange-400 to-orange-600 text-orange-900' :
                       'bg-gradient-to-r from-purple-500 to-purple-700 text-white'
                     }`}>
-                      {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : entry.rank}
+                      {medal}
                     </div>
                     <div>
                       <p className={`font-medium text-sm ${
                         isCurrentPlayer ? 'text-yellow-300' : 'text-white'
                       }`}>
-                        {formatAddress(entry.address)}
-                        {isCurrentPlayer && <span className="ml-2 text-xs bg-yellow-500 text-yellow-900 px-2 py-1 rounded-full">SEN</span>}
+                        {leaderboardManagerRef.current.formatAddress(entry.address)}
+                        {isCurrentPlayer && <span className="ml-2 text-xs bg-yellow-500 text-yellow-900 px-2 py-1 rounded-full">YOU</span>}
                       </p>
                       <p className={`text-xs mt-1 ${
                         isCurrentPlayer ? 'text-yellow-200' : 'text-gray-400'
                       }`}>
-                        {entry.nickname}
+                        {entry.displayName}
                       </p>
                     </div>
                   </div>
@@ -422,7 +571,7 @@ function LeaderboardSidebar({ playerAddress, currentScore }: LeaderboardSidebarP
                       isCurrentPlayer ? 'text-yellow-400' : 
                       isTop3 ? 'text-purple-300' : 'text-gray-300'
                     }`}>
-                      {formatScore(entry.score)}
+                      {leaderboardManagerRef.current.formatScore(entry.score)}
                     </p>
                   </div>
                 </div>
@@ -439,7 +588,7 @@ function LeaderboardSidebar({ playerAddress, currentScore }: LeaderboardSidebarP
           disabled={loading}
           className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-all duration-300 transform hover:scale-105 disabled:hover:scale-100 shadow-lg shadow-purple-500/30"
         >
-          {loading ? '🔄 Wait...' : '🔄 Refresh'}
+          {loading ? '🔄 Loading...' : '🔄 Refresh'}
         </button>
       </div>
     </div>
