@@ -271,6 +271,19 @@ interface LeaderboardEntry {
   rank: number;
 }
 
+// API response interface for MonadClip leaderboard
+interface MonadClipAPIEntry {
+  userId: number;
+  username: string;
+  walletAddress: string;
+  score?: number; // Optional score field
+  transactionCount?: number; // Optional transactionCount field
+  gameId: number;
+  gameName: string;
+  rank: number;
+  timestamp?: number;
+}
+
 // New interface for MonadClip API response
 interface MonadClipLeaderboardEntry {
   address: string;
@@ -299,7 +312,7 @@ class LeaderboardManager {
       const baseUrl = 'https://www.monadclip.fun/api/leaderboard?gameId=7&sortBy=scores';
       
       // Try to fetch data directly first (to get score field)
-      let allData = [];
+      const allData: MonadClipAPIEntry[] = []; // Will store leaderboard entries
       try {
         const firstPageResponse = await fetch(`${baseUrl}&page=1`);
         if (firstPageResponse.ok) {
@@ -367,11 +380,11 @@ class LeaderboardManager {
       // Process all API data with validation
       if (allData.length > 0) {
         // Store full leaderboard data with rank information from API
-        this.fullLeaderboard = allData.map((entry: any) => ({
+        this.fullLeaderboard = allData.map((entry) => ({
           address: entry.walletAddress,
           displayName: entry.username || 'Anonymous',
           // Use score field if available, otherwise fallback to transactionCount
-          score: parseInt(entry.score) || parseInt(entry.transactionCount) || 0,
+          score: parseInt(entry.score?.toString() || entry.transactionCount?.toString() || '0') || 0,
           timestamp: entry.timestamp || Date.now()
         }));
         
