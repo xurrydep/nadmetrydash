@@ -197,6 +197,38 @@ export async function POST(request: NextRequest) {
     const urlDomain = selectedUrl ? new URL(selectedUrl).hostname : 'unknown';
     console.log(`RPC Domain: ${urlDomain}`);
 
+    // Anti-cheat: Add additional validation to prevent console manipulation
+    // Check for suspicious patterns that indicate manual request manipulation
+    const userAgent = request.headers.get('user-agent') || '';
+    const acceptHeader = request.headers.get('accept') || '';
+    
+    // Block requests that look like they're from automated tools or manual manipulation
+    if (userAgent.includes('Postman') || 
+        userAgent.includes('curl') || 
+        userAgent.includes('wget') ||
+        !acceptHeader.includes('application/json')) {
+      console.warn(`Blocked suspicious request from ${clientIp}: ${userAgent}`);
+      return createAuthenticatedResponse(
+        { error: "Forbidden: Suspicious request detected" },
+        403
+      );
+    }
+
+    // Validate that the request is coming from a browser context
+    const hasValidBrowserHeaders = userAgent.includes('Mozilla') && 
+                                  (userAgent.includes('Chrome') || 
+                                   userAgent.includes('Firefox') || 
+                                   userAgent.includes('Safari'));
+    
+    // In production, be stricter about browser headers
+    if (process.env.NODE_ENV === 'production' && !hasValidBrowserHeaders) {
+      console.warn(`Blocked non-browser request from ${clientIp}: ${userAgent}`);
+      return createAuthenticatedResponse(
+        { error: "Forbidden: Request must come from a browser" },
+        403
+      );
+    }
+
     // Call the updatePlayerData function
     const hash = await walletClient.writeContract({
       address: CONTRACT_ADDRESS,

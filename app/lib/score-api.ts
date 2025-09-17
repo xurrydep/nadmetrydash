@@ -37,17 +37,24 @@ interface PlayerDataPerGameResponse {
   error?: string;
 }
 
+// Generate a unique request ID to prevent replay attacks
+function generateUniqueRequestId(): string {
+  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
 // Get session token for authenticated requests
 export async function getSessionToken(playerAddress: string): Promise<string | null> {
   try {
     // In a real implementation, you would sign a message with the user's wallet here
-    const message = `Authenticate for score submission: ${playerAddress}`;
+    const message = `Authenticate for score submission: ${playerAddress} at ${new Date().toISOString()}`;
     const signedMessage = "dummy_signature"; // This should be replaced with actual wallet signing
     
     const response = await fetch('/api/get-session-token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        // Add a unique request ID to prevent replay attacks
+        'X-Request-ID': generateUniqueRequestId(),
       },
       body: JSON.stringify({
         playerAddress,
@@ -88,10 +95,28 @@ export async function submitPlayerScore(
       sessionToken = token;
     }
 
+    // Anti-cheat: Validate score amounts before submission
+    if (scoreAmount < 0 || transactionAmount < 0) {
+      return {
+        success: false,
+        error: 'Invalid score amounts',
+      };
+    }
+
+    // Anti-cheat: Reasonable limits to prevent manipulation
+    if (scoreAmount > 10000 || transactionAmount > 100) {
+      return {
+        success: false,
+        error: 'Score amounts too large',
+      };
+    }
+
     const response = await fetch('/api/update-player-data', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        // Add a unique request ID to prevent replay attacks
+        'X-Request-ID': generateUniqueRequestId(),
       },
       body: JSON.stringify({
         playerAddress,
@@ -155,12 +180,24 @@ export class ScoreSubmissionManager {
 
   // Add score points (will be batched and submitted after delay)
   addScore(points: number) {
+    // Anti-cheat: Validate score points
+    if (points < 0 || points > 1000) {
+      console.warn('Invalid score points:', points);
+      return;
+    }
+    
     this.pendingScore += points;
     this.scheduleSubmission();
   }
 
   // Add transaction count (will be batched and submitted after delay)
   addTransaction(count: number = 1) {
+    // Anti-cheat: Validate transaction count
+    if (count < 0 || count > 10) {
+      console.warn('Invalid transaction count:', count);
+      return;
+    }
+    
     this.pendingTransactions += count;
     this.scheduleSubmission();
   }
@@ -246,6 +283,12 @@ export class TransactionQueue {
       onRetry?: (attempt: number) => void;
     }
   ): string {
+    // Anti-cheat: Validate inputs
+    if (scoreAmount < 0 || transactionAmount < 0 || scoreAmount > 10000 || transactionAmount > 100) {
+      console.warn('Invalid transaction parameters:', { scoreAmount, transactionAmount });
+      return '';
+    }
+    
     const id = `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     const transaction: QueuedTransaction = {

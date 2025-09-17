@@ -28,6 +28,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Enhanced security: Add additional validation to prevent manual token generation
+    const userAgent = request.headers.get('user-agent') || '';
+    
+    // Block requests that look like they're from automated tools
+    if (userAgent.includes('Postman') || 
+        userAgent.includes('curl') || 
+        userAgent.includes('wget')) {
+      return NextResponse.json(
+        { error: 'Forbidden: Automated requests not allowed' },
+        { status: 403 }
+      );
+    }
+
+    // Validate that the request is coming from a browser context
+    const hasValidBrowserHeaders = userAgent.includes('Mozilla') && 
+                                  (userAgent.includes('Chrome') || 
+                                   userAgent.includes('Firefox') || 
+                                   userAgent.includes('Safari'));
+    
+    // In production, be stricter about browser headers
+    if (process.env.NODE_ENV === 'production' && !hasValidBrowserHeaders) {
+      return NextResponse.json(
+        { error: 'Forbidden: Request must come from a browser' },
+        { status: 403 }
+      );
+    }
+
     // Check if this is a server-generated token request (for development/testing)
     // In production, you should verify the signature using viem/ethers
     let sessionToken: string;

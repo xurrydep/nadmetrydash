@@ -112,6 +112,9 @@ const OBSTACLE_SPAWN_RATE = 0.015;
 const MAX_ALLOWED_SPEED = GAME_SPEED * 3;
 const SPEED_CHECK_INTERVAL = 60; // Check every 60 frames
 
+// Add this new constant for fixed time step
+const TIME_STEP = 1000 / 60; // 60 FPS
+
 // Theme tanımları
 const THEMES: { [key: string]: Theme } = {
   classic: {
@@ -308,74 +311,40 @@ class LeaderboardManager {
       this.leaderboard = [];
       this.fullLeaderboard = [];
       
-      // Fetch from proper JSON API endpoint sorted by scores
+      // Fetch from proper JSON API endpoint sorted by scores instead of transactions
       const baseUrl = 'https://www.monadclip.fun/api/leaderboard?gameId=7&sortBy=scores';
       
-      // Try to fetch data directly first (to get score field)
-      const allData: MonadClipAPIEntry[] = []; // Will store leaderboard entries
-      try {
-        const firstPageResponse = await fetch(`${baseUrl}&page=1`);
-        if (firstPageResponse.ok) {
-          const firstPageData = await firstPageResponse.json();
-          const totalPages = firstPageData.pagination?.totalPages || 1;
-          
-          console.log('Direct API access successful, pagination info:', firstPageData.pagination);
-          
-          // Fetch all pages directly
-          for (let page = 1; page <= Math.min(totalPages, 10); page++) { // Limit to 10 pages max for performance
-            try {
-              const response = await fetch(`${baseUrl}&page=${page}`);
-              if (response.ok) {
-                const data = await response.json();
-                if (data && data.data && Array.isArray(data.data)) {
-                  allData.push(...data.data);
-                  console.log(`Direct fetch page ${page} with ${data.data.length} entries`);
-                }
-              }
-            } catch (error) {
-              console.warn(`Failed to fetch page ${page} directly:`, error);
-            }
-          }
-        }
-      } catch (directError) {
-        console.log('Direct API access failed, falling back to CORS proxy:', directError);
-        
-        // Fallback to CORS proxy if direct access fails
-        try {
-          // First, get the first page to determine total pages
-          const firstPageResponse = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(baseUrl + '&page=1')}`);
-          
-          if (!firstPageResponse.ok) {
-            throw new Error(`Failed to fetch leaderboard: ${firstPageResponse.status}`);
-          }
+      // Using allorigins to bypass CORS
+      // First, get the first page to determine total pages
+      const firstPageResponse = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(baseUrl + '&page=1')}`);
+      
+      if (!firstPageResponse.ok) {
+        throw new Error(`Failed to fetch leaderboard: ${firstPageResponse.status}`);
+      }
 
-          const firstPageData = await firstPageResponse.json();
-          const totalPages = firstPageData.pagination?.totalPages || 1;
-          
-          console.log('Proxy pagination info:', firstPageData.pagination);
-          
-          // Fetch all pages through proxy
-          for (let page = 1; page <= Math.min(totalPages, 10); page++) { // Limit to 10 pages max for performance
-            try {
-              const response = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(baseUrl + `&page=${page}`)}`);
-              if (response.ok) {
-                const data = await response.json();
-                if (data && data.data && Array.isArray(data.data)) {
-                  allData.push(...data.data);
-                  console.log(`Proxy fetch page ${page} with ${data.data.length} entries`);
-                }
-              }
-            } catch (error) {
-              console.warn(`Failed to fetch page ${page} via proxy:`, error);
+      const firstPageData = await firstPageResponse.json();
+      const totalPages = firstPageData.pagination?.totalPages || 1;
+      
+      console.log('Pagination info:', firstPageData.pagination);
+      
+      // Fetch all pages
+      const allData: MonadClipAPIEntry[] = [];
+      for (let page = 1; page <= Math.min(totalPages, 10); page++) { // Limit to 10 pages max for performance
+        try {
+          const response = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(baseUrl + `&page=${page}`)}`);
+          if (response.ok) {
+            const data = await response.json();
+            if (data && data.data && Array.isArray(data.data)) {
+              allData.push(...data.data);
+              console.log(`Fetched page ${page} with ${data.data.length} entries`);
             }
           }
-        } catch (proxyError) {
-          console.error('Both direct and proxy access failed:', proxyError);
-          throw proxyError;
+        } catch (error) {
+          console.warn(`Failed to fetch page ${page}:`, error);
         }
       }
       
-      console.log('📦 Full API Response:', { entries: allData.length });
+      console.log('📦 Full API Response:', { totalPages, entries: allData.length });
 
       // Process all API data with validation
       if (allData.length > 0) {
@@ -383,12 +352,12 @@ class LeaderboardManager {
         this.fullLeaderboard = allData.map((entry) => ({
           address: entry.walletAddress,
           displayName: entry.username || 'Anonymous',
-          // Use score field if available, otherwise fallback to transactionCount
-          score: parseInt(entry.score?.toString() || entry.transactionCount?.toString() || '0') || 0,
+          // Use score field instead of transactionCount
+          score: parseInt(entry.score?.toString() || '0') || 0,
           timestamp: entry.timestamp || Date.now()
         }));
         
-        // Sort by score descending (using score field as score)
+        // Sort by score descending
         this.fullLeaderboard.sort((a, b) => b.score - a.score);
         
         // Set the displayed leaderboard to top 10
@@ -625,6 +594,8 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
   const frameCountRef = useRef(0);
   const lastSpeedRef = useRef(GAME_SPEED);
   const speedViolationCountRef = useRef(0);
+  // Add time tracking for fixed time step
+  const lastUpdateTimeRef = useRef<number>(0);
   
   // Anti-cheat: Validate game state integrity
   const validateGameStateIntegrity = (gameState: GameState) => {
@@ -701,6 +672,14 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
 
     const gameState = gameStateRef.current;
     
+    // Implement fixed time step to prevent speed variations
+    const now = performance.now();
+    const deltaTime = lastUpdateTimeRef.current ? now - lastUpdateTimeRef.current : 0;
+    lastUpdateTimeRef.current = now;
+    
+    // Use a fixed time step regardless of frame rate
+    const timeStepFactor = deltaTime / TIME_STEP;
+    
     // Anti-cheat: Check for speed manipulation
     frameCountRef.current++;
     if (frameCountRef.current % SPEED_CHECK_INTERVAL === 0) {
@@ -755,10 +734,10 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
 
     // Draw animated background
     drawBackground(ctx, gameState.backgroundOffset, gameState);
-    gameState.backgroundOffset += gameState.gameSpeed * 0.5;
+    gameState.backgroundOffset += gameState.gameSpeed * 0.5 * timeStepFactor; // Apply time step factor
 
     // Update distance and check for mode changes
-    gameState.distance += gameState.gameSpeed * 0.1;
+    gameState.distance += gameState.gameSpeed * 0.1 * timeStepFactor; // Apply time step factor
     setDistance(Math.floor(gameState.distance));
     
     // Anti-cheat: Validate distance progression
@@ -781,7 +760,7 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     // Check for new movement abilities
     checkNewMovementAbilities(gameState, score);
     
-    // Player physics
+    // Player physics with fixed time step
     const player = gameState.player;
     
     // Activate rocket mode after 500m (with cooldown check)
@@ -793,7 +772,7 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     
     // Decrease rocket cooldown
     if (gameState.rocketCooldown > 0) {
-      gameState.rocketCooldown--;
+      gameState.rocketCooldown -= timeStepFactor; // Apply time step factor
     }
     
     if (player.mode === 'normal' || player.mode === 'mini') {
@@ -816,9 +795,9 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
         }
       }
 
-      // Apply gravity
-      player.velocityY += gravity;
-      player.y += player.velocityY;
+      // Apply gravity with time step factor
+      player.velocityY += gravity * timeStepFactor;
+      player.y += player.velocityY * timeStepFactor;
 
       // Ground collision
       const groundY = GAME_HEIGHT - GROUND_HEIGHT - player.height;
@@ -830,7 +809,7 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
         gameState.multiJumpCount = 0; // Reset multi jump count on ground
       } else {
         // Rotate player while in air
-        player.rotation += 8;
+        player.rotation += 8 * timeStepFactor;
       }
     } else if (player.mode === 'gravity') {
       // Gravity mode physics (inverted)
@@ -843,9 +822,9 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
         }
       }
 
-      // Apply inverted gravity
-      player.velocityY -= GRAVITY;
-      player.y += player.velocityY;
+      // Apply inverted gravity with time step factor
+      player.velocityY -= GRAVITY * timeStepFactor;
+      player.y += player.velocityY * timeStepFactor;
 
       // Ceiling collision in gravity mode
       if (player.y <= 50) {
@@ -855,7 +834,7 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
         player.rotation = 180;
       } else {
         // Rotate player while in air (inverted)
-        player.rotation -= 8;
+        player.rotation -= 8 * timeStepFactor;
       }
       
       // Ground collision in gravity mode (should not land on ground)
@@ -869,14 +848,14 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
       if (gameState.keys.space || gameState.keys.up || gameState.keys.w) {
         if (player.rocketFuel > 0) {
           player.velocityY = -6; // Hover force
-          player.rocketFuel -= 5; // Increased fuel consumption
+          player.rocketFuel -= 5 * timeStepFactor; // Apply time step factor
           createRocketParticles(gameState, player.x, player.y + player.height);
         }
       } else {
-        player.velocityY += GRAVITY * 0.5; // Reduced gravity in rocket mode
+        player.velocityY += GRAVITY * 0.5 * timeStepFactor; // Apply time step factor
       }
       
-      player.y += player.velocityY;
+      player.y += player.velocityY * timeStepFactor;
       
       // Check if rocket fuel is depleted - return to normal mode
       if (player.rocketFuel <= 0) {
@@ -903,7 +882,7 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
         player.velocityY = 0;
       }
       
-      player.rotation += 2; // Slow rotation in rocket mode
+      player.rotation += 2 * timeStepFactor; // Slow rotation in rocket mode
     }
     
     // New evolutionary modes physics
@@ -915,14 +894,14 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
         player.velocityY = 3; // Smooth downward movement
       }
       
-      player.y += player.velocityY;
+      player.y += player.velocityY * timeStepFactor;
       
       // Boundaries
       if (player.y <= 50) player.y = 50;
       const groundY = GAME_HEIGHT - GROUND_HEIGHT - player.height;
       if (player.y >= groundY) player.y = groundY;
       
-      player.rotation += 2; // Gentle rotation
+      player.rotation += 2 * timeStepFactor; // Gentle rotation
     } else if (player.mode === 'ball') {
       // Ball mode - bouncing physics
       if (gameState.keys.space || gameState.keys.up) {
@@ -933,9 +912,9 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
         }
       }
       
-      // Apply gravity with bounce
-      player.velocityY += GRAVITY;
-      player.y += player.velocityY;
+      // Apply gravity with bounce and time step factor
+      player.velocityY += GRAVITY * timeStepFactor;
+      player.y += player.velocityY * timeStepFactor;
       
       // Ground collision with bounce
       const groundY = GAME_HEIGHT - GROUND_HEIGHT - player.height;
@@ -946,20 +925,20 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
       }
       
       // Continuous rotation
-      player.rotation += 12;
+      player.rotation += 12 * timeStepFactor;
     } else if (player.mode === 'ufo') {
       // UFO mode - hover with fuel system
       if (gameState.keys.space || gameState.keys.up || gameState.keys.w) {
         if (player.rocketFuel > 0) {
           player.velocityY = -4; // Controlled hover
-          player.rocketFuel -= 3;
+          player.rocketFuel -= 3 * timeStepFactor; // Apply time step factor
           createRocketParticles(gameState, player.x, player.y + player.height);
         }
       } else {
-        player.velocityY += GRAVITY * 0.3; // Very light gravity
+        player.velocityY += GRAVITY * 0.3 * timeStepFactor; // Apply time step factor
       }
       
-      player.y += player.velocityY;
+      player.y += player.velocityY * timeStepFactor;
       
       // Boundaries
       if (player.y <= 50) {
@@ -991,7 +970,7 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     }
 
     // Move camera with player
-    gameState.camera.x += gameState.gameSpeed;
+    gameState.camera.x += gameState.gameSpeed * timeStepFactor;
 
     // Spawn obstacles with mode-specific rates
     let spawnRate = OBSTACLE_SPAWN_RATE;
@@ -1001,22 +980,22 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
       spawnRate = OBSTACLE_SPAWN_RATE * 1.8; // Much more frequent obstacles in mini mode
     }
     
-    if (Math.random() < spawnRate) {
+    if (Math.random() < spawnRate * timeStepFactor) {
       spawnObstacle(gameState);
     }
     
     // Spawn power-ups (rare)
-    if (Math.random() < 0.003) { // Much rarer than obstacles
+    if (Math.random() < 0.003 * timeStepFactor) { // Much rarer than obstacles
       spawnPowerUp(gameState);
     }
 
     // Update obstacles
     gameState.obstacles.forEach((obstacle, index) => {
-      obstacle.x -= gameState.gameSpeed;
+      obstacle.x -= gameState.gameSpeed * timeStepFactor;
       
       // Update rotating platform rotation
       if (obstacle.type === 'rotating_platform' && obstacle.rotation !== undefined && obstacle.rotationSpeed !== undefined) {
-        obstacle.rotation += obstacle.rotationSpeed;
+        obstacle.rotation += obstacle.rotationSpeed * timeStepFactor;
         if (obstacle.rotation >= 360) {
           obstacle.rotation -= 360;
         }
@@ -1025,12 +1004,12 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
       // Update sliding floor movement
       if (obstacle.type === 'sliding_floor' && obstacle.slideDirection && obstacle.slideSpeed && obstacle.originalX !== undefined && obstacle.slideRange !== undefined) {
         if (obstacle.slideDirection === 'left') {
-          obstacle.x -= obstacle.slideSpeed;
+          obstacle.x -= obstacle.slideSpeed * timeStepFactor;
           if (obstacle.x <= obstacle.originalX - obstacle.slideRange) {
             obstacle.slideDirection = 'right';
           }
         } else {
-          obstacle.x += obstacle.slideSpeed;
+          obstacle.x += obstacle.slideSpeed * timeStepFactor;
           if (obstacle.x >= obstacle.originalX + obstacle.slideRange) {
             obstacle.slideDirection = 'left';
           }
@@ -1104,7 +1083,7 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     
     // Update power-ups
     gameState.powerUps.forEach((powerUp, index) => {
-      powerUp.x -= gameState.gameSpeed;
+      powerUp.x -= gameState.gameSpeed * timeStepFactor;
       
       // Remove off-screen power-ups
       if (powerUp.x + powerUp.width < -100) {
