@@ -1,3 +1,5 @@
+import { createHash } from 'crypto';
+
 interface RateLimitEntry {
   count: number;
   resetTime: number;
@@ -101,7 +103,7 @@ export function isDuplicateScoreSubmission(
 ): boolean {
   // Create a unique hash for this score submission
   const scoreData = `${playerAddress}-${scoreAmount}-${gameStateHash || ''}-${Math.floor(Date.now() / 1000)}`;
-  const scoreHash = require('crypto').createHash('sha256').update(scoreData).digest('hex');
+  const scoreHash = createHash('sha256').update(scoreData).digest('hex');
   
   const now = Date.now();
   const existingTimestamp = scoreDeduplicationStore.get(scoreHash);
