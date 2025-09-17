@@ -127,30 +127,34 @@ export async function POST(request: NextRequest) {
         nodeEnv: process.env.NODE_ENV
       });
       
-      // In development mode, provide more detailed error information
-      if (process.env.NODE_ENV === 'development') {
-        // In development, we're more lenient but still need to validate the token exists
-        if (!sessionToken) {
-          return createAuthenticatedResponse(
-            { 
-              error: "Unauthorized: Missing session token",
-              debug: {
-                playerAddress,
-                timestamp: Date.now()
-              }
-            },
-            401
-          );
-        }
-        // If we have a token in development, we'll allow it to proceed
-        console.log('Development mode: Allowing request with token', sessionToken.substring(0, 10) + '...');
-      } else {
-        // In production, be strict about validation
+      // Provide more detailed error information
+      if (!sessionToken) {
         return createAuthenticatedResponse(
-          { error: "Unauthorized: Invalid or expired session token" },
+          { 
+            error: "Unauthorized: Missing session token",
+            debug: {
+              playerAddress,
+              timestamp: Date.now(),
+              nodeEnv: process.env.NODE_ENV
+            }
+          },
           401
         );
       }
+      
+      // If we have a token but validation failed, provide more details
+      return createAuthenticatedResponse(
+        { 
+          error: "Unauthorized: Invalid or expired session token",
+          debug: {
+            playerAddress,
+            tokenLength: sessionToken.length,
+            nodeEnv: process.env.NODE_ENV,
+            message: "Token validation failed - this could be due to token expiration, mismatched game state, or network issues"
+          }
+        },
+        401
+      );
     }
 
     // Anti-cheat: Validate game state hash if provided

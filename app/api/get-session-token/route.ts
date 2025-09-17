@@ -73,7 +73,14 @@ export async function POST(request: NextRequest) {
     
     // Include game state in token generation
     const sessionToken = generateSessionToken(playerAddress, timestamp, gameState || {}, ipIdentifier);
-    console.log('Generated token with game state', { playerAddress, timestamp, sessionToken, gameState, ipIdentifier });
+    console.log('Generated token with game state', { 
+      playerAddress, 
+      timestamp, 
+      sessionToken: sessionToken.substring(0, 10) + '...', 
+      gameState, 
+      ipIdentifier,
+      clientIp
+    });
 
     return NextResponse.json({
       success: true,
