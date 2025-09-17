@@ -279,16 +279,16 @@ function LeaderboardSidebar({ playerAddress, currentScore }: LeaderboardSidebarP
     try {
       // Real leaderboard data from Monad Games
       const realLeaderboardData: LeaderboardEntry[] = [
-        { address: '0xFeA3...6499', nickname: 'AnonAmosAdmn', score: 400, rank: 1 },
-        { address: '0x7217...6b24', nickname: 'serhat9493', score: 330, rank: 2 },
-        { address: '0x0d3e...D062', nickname: 'OldSix', score: 310, rank: 3 },
-        { address: '0x3E82...2953', nickname: 'xurry', score: 290, rank: 4 },
-        { address: '0x1b88...9b55', nickname: 'mld5', score: 290, rank: 5 },
-        { address: '0xBc5d...4C54', nickname: 'Kankokn', score: 270, rank: 6 },
-        { address: '0xedEC...dD08', nickname: 'James', score: 190, rank: 7 },
-        { address: '0xf535...84D3', nickname: 'semih', score: 120, rank: 8 },
-        { address: '0x5fA0...2193', nickname: 'consumeobeydie', score: 110, rank: 9 },
-        { address: '0x797e...637b', nickname: 'shuegg', score: 80, rank: 10 }
+        { address: '0xeb92...85dE', nickname: 'ivanx4k', score: 1450, rank: 1 },
+        { address: '0xe4D7...D2c0', nickname: 'olanre', score: 1.130, rank: 2 },
+        { address: '0x11B5...440b', nickname: 'mimus', score: 1.080, rank: 3 },
+        { address: '0x5fA0...2193', nickname: 'consumeobeydie', score: 1060, rank: 4 },
+        { address: '0x0558...6EDe', nickname: 'alex6606', score: 650, rank: 5 },
+        { address: '0x06BD...4234', nickname: 'jeksonjs', score: 600, rank: 6 },
+        { address: '0x9A9F...9375', nickname: 'cj122623', score: 580, rank: 7 },
+        { address: '0x9EE1...0e4E', nickname: 'gore', score: 560, rank: 8 },
+        { address: '0xE321...aE37', nickname: 'veerabhadra11', score: 480, rank: 9 },
+        { address: '0xf31e...cFBA', nickname: 'g697', score: 230, rank: 10 },
       ];
       
       // Get player's actual data
