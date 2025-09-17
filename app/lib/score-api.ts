@@ -103,8 +103,8 @@ export async function submitPlayerScore(
       };
     }
 
-    // Anti-cheat: Reasonable limits to prevent manipulation
-    if (scoreAmount > 10000 || transactionAmount > 100) {
+    // Anti-cheat: Reasonable limits to prevent manipulation (updated to match backend)
+    if (scoreAmount > 10000 || transactionAmount > 50) {
       return {
         success: false,
         error: 'Score amounts too large',
@@ -180,8 +180,8 @@ export class ScoreSubmissionManager {
 
   // Add score points (will be batched and submitted after delay)
   addScore(points: number) {
-    // Anti-cheat: Validate score points
-    if (points < 0 || points > 1000) {
+    // Anti-cheat: Validate score points (updated to match backend)
+    if (points < 0 || points > 10000) {
       console.warn('Invalid score points:', points);
       return;
     }
@@ -192,8 +192,8 @@ export class ScoreSubmissionManager {
 
   // Add transaction count (will be batched and submitted after delay)
   addTransaction(count: number = 1) {
-    // Anti-cheat: Validate transaction count
-    if (count < 0 || count > 10) {
+    // Anti-cheat: Validate transaction count (updated to match backend)
+    if (count < 0 || count > 50) {
       console.warn('Invalid transaction count:', count);
       return;
     }
@@ -283,8 +283,8 @@ export class TransactionQueue {
       onRetry?: (attempt: number) => void;
     }
   ): string {
-    // Anti-cheat: Validate inputs
-    if (scoreAmount < 0 || transactionAmount < 0 || scoreAmount > 10000 || transactionAmount > 100) {
+    // Anti-cheat: Validate inputs (updated to match backend)
+    if (scoreAmount < 0 || transactionAmount < 0 || scoreAmount > 10000 || transactionAmount > 50) {
       console.warn('Invalid transaction parameters:', { scoreAmount, transactionAmount });
       return '';
     }

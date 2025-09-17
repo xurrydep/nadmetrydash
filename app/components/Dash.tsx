@@ -612,8 +612,10 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
       return false;
     }
     
-    // Check if distance progression is reasonable
-    if (gameState.distance < 0 || gameState.distance > score * 20 + 1000) {
+    // Check if distance progression is reasonable (adjusted for high scores)
+    // For high scores, we allow greater distance progression
+    const maxDistance = score * 50 + 2000; // Increased from score * 20 + 1000
+    if (gameState.distance < 0 || gameState.distance > maxDistance) {
       console.warn("Unreasonable distance progression detected");
       return false;
     }
@@ -740,8 +742,10 @@ export default function NadmetryDashGame({ playerAddress }: NadmetryDashGameProp
     gameState.distance += gameState.gameSpeed * 0.1 * timeStepFactor; // Apply time step factor
     setDistance(Math.floor(gameState.distance));
     
-    // Anti-cheat: Validate distance progression
-    if (gameState.distance > score * 10 + 100) { // Distance should be proportional to score
+    // Anti-cheat: Validate distance progression (adjusted for high scores)
+    // For high scores, we allow greater distance progression
+    const maxDistance = score * 50 + 2000; // Increased from score * 10 + 100
+    if (gameState.distance > maxDistance) {
       console.warn("Potential cheating detected: Distance progression too fast");
     }
     

@@ -97,14 +97,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Maximum limits to prevent abuse - made more restrictive
-    const MAX_SCORE_PER_REQUEST = 2000; // Reduced from 10000
-    const MAX_TRANSACTIONS_PER_REQUEST = 10; // Reduced from 100
-    const MAX_SCORE_PER_SECOND = 50; // Maximum score increase per second
+    // Maximum limits to prevent abuse - made more reasonable for legitimate high scores
+    const MAX_SCORE_PER_REQUEST = 10000; // Increased from 2000 to allow for legitimate high scores
+    const MAX_TRANSACTIONS_PER_REQUEST = 50; // Increased from 10
+    const MAX_SCORE_PER_SECOND = 200; // Increased from 50 to allow for legitimate high scores
 
     // Additional validation: reasonable score ranges
     const MIN_SCORE_PER_REQUEST = 1;
-    const MAX_SCORE_PER_TRANSACTION = 2000; // Max 1000 points per transaction
+    const MAX_SCORE_PER_TRANSACTION = 10000; // Increased from 2000
 
     if (
       scoreAmount > MAX_SCORE_PER_REQUEST ||
@@ -142,8 +142,16 @@ export async function POST(request: NextRequest) {
     const scorePerSecond = scoreAmount / (transactionAmount || 1);
     if (scorePerSecond > MAX_SCORE_PER_SECOND) {
       console.warn(`Potential cheating detected: Score progression too fast (${scorePerSecond} points/sec)`);
-      // Log this event for further analysis
-      // Could optionally reject the request or flag for review
+      // For very high scores, we'll allow them but log for review
+      // Only reject if it's clearly cheating (over 10x the limit)
+      if (scorePerSecond > MAX_SCORE_PER_SECOND * 10) {
+        return createAuthenticatedResponse(
+          {
+            error: `Score progression too fast. Maximum: ${MAX_SCORE_PER_SECOND} points per second`,
+          },
+          400
+        );
+      }
     }
 
     // Request deduplication
